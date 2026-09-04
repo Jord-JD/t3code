@@ -6431,9 +6431,9 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.split") {
-        if (!canOperateTerminal) return;
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperateTerminal) return;
         if (terminalFocusOwner === "right-panel") {
           splitPanelTerminal();
           return;
@@ -6446,9 +6446,9 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.splitVertical") {
-        if (!canOperateTerminal) return;
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperateTerminal) return;
         if (terminalFocusOwner === "right-panel") {
           splitPanelTerminal("vertical");
           return;
@@ -6461,9 +6461,9 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.close") {
-        if (!canOperateTerminal) return;
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperateTerminal) return;
         if (terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal") {
           requestClosePanelTerminal(activeRightPanelSurface.activeTerminalId);
           return;
@@ -6474,9 +6474,9 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.new") {
-        if (!canOperateTerminal) return;
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperateTerminal) return;
         if (terminalFocusOwner === "right-panel") {
           addTerminalSurface();
           return;
