@@ -444,8 +444,8 @@ function ProjectDetail({
     const session = Option.getOrNull(AsyncResult.value(result));
     return (
       result._tag !== "Failure" &&
-      session?.authenticated === true &&
-      session.scopes?.includes(AuthSettingsWriteScope) === true
+      session !== null &&
+      sessionGrantsScope(session, AuthSettingsWriteScope)
     );
   });
   // Provider instances and model options belong to the environment that runs
