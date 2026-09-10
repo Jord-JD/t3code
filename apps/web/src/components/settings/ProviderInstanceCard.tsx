@@ -351,6 +351,7 @@ interface ProviderInstanceCardProps {
   readonly selected?: boolean | undefined;
   readonly onSelect?: (() => void) | undefined;
   readonly readOnly?: boolean | undefined;
+  readonly canWriteSettings?: boolean;
   readonly onUpdate: (nextInstance: ProviderInstanceConfig) => void;
   /**
    * Pass `undefined` to hide the delete footer entirely. Built-in default
@@ -406,6 +407,7 @@ export function ProviderInstanceCard({
   selected = false,
   onSelect,
   readOnly = false,
+  canWriteSettings = true,
   onUpdate,
   onDelete,
   headerAction,
@@ -893,6 +895,7 @@ export function ProviderInstanceCard({
           <div className="px-3 py-3 sm:px-4">
             <ProviderModelsSection
               canManageCustomModels={!readOnly}
+              canWritePreferences={canWriteSettings}
               instanceId={instanceId}
               driverKind={driverKind}
               models={modelsForDisplay}

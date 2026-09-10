@@ -439,6 +439,14 @@ function ProjectDetail({
       session.scopes?.includes(AuthOrchestrationOperateScope) === true
     );
   });
+  const canWriteGroupSettings = groupSessions.every((result) => {
+    const session = Option.getOrNull(AsyncResult.value(result));
+    return (
+      result._tag !== "Failure" &&
+      session?.authenticated === true &&
+      session.scopes?.includes(AuthSettingsWriteScope) === true
+    );
+  });
   // Provider instances and model options belong to the environment that runs
   // the project's threads. The hosted app has no primary environment, so
   // reading them from there would show "No providers available" everywhere.
@@ -1273,7 +1281,7 @@ function ProjectDetail({
                 <SettingResetButton
                   label="automatic pull"
                   tooltip="Reset to inherited automatic pull setting"
-                  disabled={savingBrowserAccess || !canEditGroup}
+                  disabled={savingBrowserAccess || !canEditGroup || !canWriteGroupSettings}
                   onClick={() => void setAutoPull(undefined)}
                 />
               ) : null
@@ -1281,7 +1289,7 @@ function ProjectDetail({
             control={
               <Switch
                 checked={autoPull}
-                disabled={savingBrowserAccess || !canEditGroup}
+                disabled={savingBrowserAccess || !canEditGroup || !canWriteGroupSettings}
                 aria-label="Automatically pull the default branch"
                 onCheckedChange={(enabled) => void setAutoPull(enabled)}
               />

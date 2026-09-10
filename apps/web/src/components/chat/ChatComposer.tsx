@@ -1610,7 +1610,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
 
   useEffect(() => {
-    if (!attachmentUploadsCapabilityKnown || !canOperateThread) {
+    if (!attachmentUploadsCapabilityKnown) {
       return;
     }
     if (!supportsAttachmentUploads) {
@@ -1625,6 +1625,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return;
     }
+    if (!canOperateThread) return;
     const invalidFiles =
       maxFileAttachmentBytes === null
         ? composerFiles
