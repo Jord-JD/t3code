@@ -197,13 +197,13 @@ export function AutomationEditor({
         showCloseButton={false}
         className="flex max-h-[90dvh] max-w-4xl flex-col overflow-hidden p-0"
       >
-        <header className="flex shrink-0 items-start justify-between gap-4 border-b px-6 py-5">
-          <div className="space-y-1">
-            <DialogTitle>{automation ? "Edit automation" : "New automation"}</DialogTitle>
-            <DialogDescription className="sr-only">
-              Define the work once. Choose when it runs.
-            </DialogDescription>
-          </div>
+        <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-6 py-3">
+          <DialogTitle className="leading-6">
+            {automation ? "Edit automation" : "New automation"}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure the task and its schedule.
+          </DialogDescription>
           <Button
             type="button"
             size="icon"
