@@ -1,3 +1,5 @@
+import { AutomationsToolkit } from "./toolkits/automations/tools.ts";
+import { AutomationsToolkitHandlersLive } from "./toolkits/automations/handlers.ts";
 import * as NodeCrypto from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -624,5 +626,6 @@ const McpTransportLive = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
+  McpServer.toolkit(AutomationsToolkit).pipe(Layer.provide(AutomationsToolkitHandlersLive)),
   DeviceToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

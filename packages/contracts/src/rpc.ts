@@ -1,3 +1,4 @@
+import { AutomationSnapshot, AutomationAction, AutomationError } from "./automations.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -360,6 +361,8 @@ export const WS_METHODS = {
   serverReportClientActivity: "server.reportClientActivity",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
+  automationsList: "automations.list",
+  automationsAction: "automations.action",
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
@@ -1277,6 +1280,16 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  Rpc.make(WS_METHODS.automationsList, {
+    payload: Schema.Struct({}),
+    success: AutomationSnapshot,
+    error: Schema.Union([AutomationError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.automationsAction, {
+    payload: AutomationAction,
+    success: AutomationSnapshot,
+    error: Schema.Union([AutomationError, EnvironmentAuthorizationError]),
+  }),
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

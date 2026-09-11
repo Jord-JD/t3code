@@ -1,3 +1,4 @@
+import { AutomationService } from "./automations/AutomationService.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -740,7 +741,16 @@ const buildAppUnderTest = (options?: {
     );
 
     const servedRoutesLayer = HttpRouter.serve(
-      makeRoutesLayer.pipe(Layer.provide(serviceLauncherClientLayer)),
+      makeRoutesLayer.pipe(
+        Layer.provide(serviceLauncherClientLayer),
+        Layer.provide(
+          Layer.succeed(AutomationService, {
+            list: Effect.succeed({ automations: [], runs: [] }),
+            runDue: Effect.void,
+            action: () => Effect.succeed({ automations: [], runs: [] }),
+          }),
+        ),
+      ),
       {
         disableListenLog: true,
         disableLogger: true,
@@ -1033,6 +1043,13 @@ const buildAppUnderTest = (options?: {
     );
 
     const appLayer = servedRoutesLayer.pipe(
+      Layer.provide(
+        Layer.succeed(AutomationService, {
+          list: Effect.succeed({ automations: [], runs: [] }),
+          runDue: Effect.void,
+          action: () => Effect.succeed({ automations: [], runs: [] }),
+        }),
+      ),
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
       Layer.provide(

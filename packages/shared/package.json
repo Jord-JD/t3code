@@ -286,6 +286,10 @@
     "./dateTime": {
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
+    },
+    "./automationSchedule": {
+      "types": "./src/automationSchedule.ts",
+      "import": "./src/automationSchedule.ts"
     }
   },
   "scripts": {
@@ -298,6 +302,7 @@
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "jose": "catalog:",
+    "rrule": "2.8.1",
     "yaml": "catalog:"
   },
   "devDependencies": {

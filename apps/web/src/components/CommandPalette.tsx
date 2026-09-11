@@ -50,6 +50,7 @@ import {
   MessageSquareIcon,
   PaletteIcon,
   SettingsIcon,
+  TimerIcon,
   SquarePenIcon,
   TextSearchIcon,
 } from "lucide-react";
@@ -1746,6 +1747,17 @@ function OpenCommandPaletteDialog(props: {
     icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({ to: "/settings" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:automations",
+    searchTerms: ["automations", "schedule", "recurring", "inbox"],
+    title: "Open automations",
+    icon: <TimerIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/automations" });
     },
   });
 
