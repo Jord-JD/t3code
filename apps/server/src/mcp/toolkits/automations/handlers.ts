@@ -71,4 +71,12 @@ export const AutomationsToolkitHandlersLive = AutomationsToolkit.toLayer({
       });
       return snapshot.automations.find((item) => item.id === input.id)!;
     }),
+  delete_automation: (input) =>
+    Effect.gen(function* () {
+      const { service, automations } = yield* context;
+      if (!automations.some((item) => item.id === input.id))
+        return yield* new AutomationError({ message: "Automation not found in this project." });
+      yield* service.action({ type: "delete", id: input.id });
+      return { id: input.id, deleted: true as const };
+    }),
 });

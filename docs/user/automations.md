@@ -10,4 +10,4 @@ Choose an isolated worktree to keep Git changes separate from your checkout. Non
 
 Runs use the selected provider and permissions. Approval requests wait in the run's thread. Review results in Inbox, archive results you have finished with, or restore them from Archived. Runs that explicitly report no findings are archived automatically. Archiving a result preserves its thread and worktree; manage those from the thread when you no longer need them. The inbox shows the most recent 500 runs.
 
-You can ask an agent to create, update, pause, or resume an automation from a chat. These tools operate on the current project and inherit the thread's model and permissions. Event-based triggers and hosted execution while your T3 server is offline are not supported.
+You can ask an agent to create, update, pause, resume, or delete an automation from a chat. These tools operate on the current project and inherit the thread's model and permissions. Event-based triggers and hosted execution while your T3 server is offline are not supported.

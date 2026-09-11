@@ -21,7 +21,7 @@ const failure = Schema.Union([AutomationError, McpCapabilityUnavailableError]);
 export const AutomationsToolkit = Toolkit.make(
   Tool.make("list_automations", {
     description:
-      "List automations for this thread's project. Use their ids to update, pause or resume a schedule.",
+      "List automations for this thread's project. Use their ids to update, pause, resume or delete a schedule.",
     success: Schema.Array(Automation),
     failure,
     dependencies,
@@ -55,4 +55,14 @@ export const AutomationsToolkit = Toolkit.make(
   })
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Idempotent, true),
+  Tool.make("delete_automation", {
+    description:
+      "Delete a saved automation in this thread's project when requested by the user. This removes its schedule and preserves existing run history, conversations and worktrees. Use list_automations to find its id. To temporarily stop runs, use set_automation_status instead.",
+    parameters: Schema.Struct({ id: AutomationInput.fields.id }),
+    success: Schema.Struct({ id: Schema.String, deleted: Schema.Literal(true) }),
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
 );
