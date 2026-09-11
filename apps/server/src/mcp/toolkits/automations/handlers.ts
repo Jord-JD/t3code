@@ -34,6 +34,7 @@ export const AutomationsToolkitHandlersLive = AutomationsToolkit.toLayer({
       const { thread, service, automations } = yield* context;
       if (input.id && !automations.some((item) => item.id === input.id))
         return yield* new AutomationError({ message: "Automation not found in this project." });
+      const prior = automations.find((item) => item.id === input.id);
       const crypto = yield* Crypto.Crypto;
       const id =
         input.id ??
@@ -49,8 +50,8 @@ export const AutomationsToolkitHandlersLive = AutomationsToolkit.toLayer({
           name: input.name,
           prompt: input.prompt,
           projectIds: [thread.projectId],
-          modelSelection: thread.modelSelection,
-          runtimeMode: thread.runtimeMode,
+          modelSelection: input.modelSelection ?? prior?.modelSelection ?? thread.modelSelection,
+          runtimeMode: input.runtimeMode ?? prior?.runtimeMode ?? thread.runtimeMode,
           executionMode: input.continueThread ? "local" : input.executionMode,
           threadId: input.continueThread ? thread.id : null,
           rrule: input.rrule,

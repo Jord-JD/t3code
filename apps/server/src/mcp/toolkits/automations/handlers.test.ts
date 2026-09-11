@@ -83,15 +83,21 @@ const makeHarness = Effect.fn(function* (
       action: (action) =>
         Effect.sync(() => {
           actions.push(action);
-          return { automations: [], runs: [] };
+          return {
+            automations: action.type === "save" ? [{ ...automation, ...action.automation }] : [],
+            runs: [],
+          };
         }),
     }),
   );
   const toolkit = yield* AutomationsToolkit.pipe(
     Effect.provide(AutomationsToolkitHandlersLive.pipe(Layer.provide(dependencies))),
   );
-  const call = (id = automation.id) =>
-    toolkit.handle("delete_automation", { id }).pipe(
+  const invoke = <Name extends keyof typeof AutomationsToolkit.tools>(
+    name: Name,
+    params: Parameters<typeof toolkit.handle<Name>>[1],
+  ) =>
+    toolkit.handle(name, params).pipe(
       Stream.unwrap,
       Stream.runCollect,
       Effect.map((results) => results.at(-1)!.result),
@@ -105,7 +111,12 @@ const makeHarness = Effect.fn(function* (
       }),
       Effect.provide(dependencies),
     );
-  return { call, actions };
+  return {
+    call: (id = automation.id) => invoke("delete_automation", { id }),
+    save: (params: Parameters<typeof toolkit.handle<"save_automation">>[1]) =>
+      invoke("save_automation", params),
+    actions,
+  };
 });
 it.effect(
   "deletes an automation owned by the current project through the normal service action",
@@ -142,4 +153,50 @@ it.effect("requires the automations capability before deleting", () =>
     });
     expect(harness.actions).toEqual([]);
   }),
+);
+
+const saveInput = {
+  name: "Scheduled review",
+  prompt: "Review changes",
+  rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+  timezone: "UTC",
+  status: "paused" as const,
+  executionMode: "local" as const,
+  continueThread: false,
+};
+it.effect("agent saves accept explicit model, reasoning options and permissions", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness();
+    const modelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "chosen-model",
+      options: [{ id: "reasoningEffort", value: "high" }],
+    };
+    yield* harness.save({ ...saveInput, modelSelection, runtimeMode: "auto-accept-edits" });
+    expect(harness.actions[0]).toMatchObject({
+      type: "save",
+      automation: { modelSelection, runtimeMode: "auto-accept-edits" },
+    });
+  }),
+);
+it.effect(
+  "agent creates inherit thread settings and edits preserve saved settings when omitted",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.save(saveInput);
+      expect(harness.actions[0]).toMatchObject({
+        automation: {
+          modelSelection: makeThread().modelSelection,
+          runtimeMode: makeThread().runtimeMode,
+        },
+      });
+      yield* harness.save({ ...saveInput, id: automation.id });
+      expect(harness.actions[1]).toMatchObject({
+        automation: {
+          modelSelection: automation.modelSelection,
+          runtimeMode: automation.runtimeMode,
+        },
+      });
+    }),
 );

@@ -25,6 +25,8 @@ import {
 } from "../../providerInstances";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { RuntimeModePicker } from "../chat/RuntimeModePicker";
+import { ComposerControlSeparator } from "../chat/ComposerControl";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
@@ -281,8 +283,8 @@ export function AutomationEditor({
                   </div>
                 </fieldset>
                 <div className="space-y-2">
-                  <span className="text-sm font-medium">Model</span>
-                  <div className="flex flex-wrap gap-2">
+                  <span className="text-sm font-medium">Model, reasoning &amp; permissions</span>
+                  <div className="flex flex-wrap items-center gap-1 rounded-lg border p-1">
                     {selection && activeEntry ? (
                       <>
                         <ProviderModelPicker
@@ -291,12 +293,13 @@ export function AutomationEditor({
                           lockedProvider={null}
                           instanceEntries={entries}
                           modelOptionsByInstance={modelOptions}
-                          triggerVariant="outline"
+                          triggerVariant="ghost"
                           triggerAriaLabel="Automation model"
                           onInstanceModelChange={(instanceId, model) =>
                             setSelection(createModelSelection(instanceId, model))
                           }
                         />
+                        <ComposerControlSeparator />
                         <TraitsPicker
                           provider={activeEntry.driverKind}
                           models={activeEntry.models}
@@ -306,7 +309,7 @@ export function AutomationEditor({
                           modelOptions={selection.options ?? []}
                           allowPromptInjectedEffort={false}
                           planModeEnabled={settings.planModeEnabled}
-                          triggerVariant="outline"
+                          triggerVariant="ghost"
                           onModelOptionsChange={(options) =>
                             setSelection(
                               createModelSelection(selection.instanceId, selection.model, options),
@@ -319,6 +322,11 @@ export function AutomationEditor({
                         Configure a provider in Settings to select a model.
                       </p>
                     )}
+                    <ComposerControlSeparator />
+                    <RuntimeModePicker
+                      runtimeMode={runtimeMode}
+                      onRuntimeModeChange={setRuntimeMode}
+                    />
                   </div>
                 </div>
 
@@ -332,7 +340,7 @@ export function AutomationEditor({
                     <ChevronDownIcon className="size-4 text-muted-foreground group-open:rotate-180" />
                   </summary>
                   <div className="space-y-4 border-t p-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-4">
                       <label className="space-y-2 text-sm font-medium">
                         Run in
                         <select
@@ -345,19 +353,6 @@ export function AutomationEditor({
                         >
                           <option value="worktree">Isolated worktree</option>
                           <option value="local">Local project</option>
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm font-medium">
-                        Permissions
-                        <select
-                          className={selectClass}
-                          value={runtimeMode}
-                          onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
-                        >
-                          <option value="approval-required">Ask for approval</option>
-                          <option value="auto-accept-edits">Accept edits</option>
-                          <option value="auto">Automatic approval</option>
-                          <option value="full-access">Full access</option>
                         </select>
                       </label>
                     </div>
