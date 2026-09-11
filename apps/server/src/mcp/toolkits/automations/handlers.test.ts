@@ -11,7 +11,9 @@ import { expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { McpSchema, McpServer } from "effect/unstable/ai";
 import { AutomationService } from "../../../automations/AutomationService.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
@@ -20,6 +22,20 @@ import { AutomationsToolkitHandlersLive } from "./handlers.ts";
 
 const PROJECT_ID = ProjectId.make("project");
 const THREAD_ID = ThreadId.make("thread");
+const decodeMcpObject = Schema.decodeUnknownEffect(Schema.JsonObject);
+const encodeMcpObject = Schema.encodeEffect(Schema.fromJsonString(Schema.JsonObject));
+const client = McpSchema.McpServerClient.of({
+  clientId: 1,
+  clientCapabilities: {},
+  clientInfo: { name: "automation-test", version: "1.0.0" },
+  protocolVersion: "2025-06-18",
+  initializePayload: {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "automation-test", version: "1.0.0" },
+  },
+  getClient: Effect.die("unused"),
+});
 function makeThread(): OrchestrationThreadShell {
   return {
     id: THREAD_ID,
@@ -84,7 +100,12 @@ const makeHarness = Effect.fn(function* (
         Effect.sync(() => {
           actions.push(action);
           return {
-            automations: action.type === "save" ? [{ ...automation, ...action.automation }] : [],
+            automations:
+              action.type === "save"
+                ? [{ ...automation, ...action.automation }]
+                : action.type === "pause" || action.type === "resume"
+                  ? [{ ...automation, status: action.type === "pause" ? "paused" : "active" }]
+                  : [],
             runs: [],
           };
         }),
@@ -112,12 +133,61 @@ const makeHarness = Effect.fn(function* (
       Effect.provide(dependencies),
     );
   return {
+    mcp: (name: keyof typeof AutomationsToolkit.tools, args: Record<string, unknown> = {}) =>
+      Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const tool = server.tools.find((entry) => entry.tool.name === name);
+        expect(tool?.tool.outputSchema).toMatchObject({ type: "object" });
+        const result = yield* server.callTool({ name, arguments: args });
+        if (result.isError) {
+          expect(result.structuredContent).toBeUndefined();
+          expect(result.content).toEqual([{ type: "text", text: expect.any(String) }]);
+        } else {
+          const structured = yield* decodeMcpObject(result.structuredContent);
+          expect(result.content).toEqual([
+            {
+              type: "text",
+              text: yield* encodeMcpObject(structured),
+            },
+          ]);
+        }
+        return result;
+      }).pipe(
+        Effect.provide(
+          McpServer.toolkit(AutomationsToolkit).pipe(
+            Layer.provide(AutomationsToolkitHandlersLive),
+            Layer.provideMerge(McpServer.McpServer.layer),
+            Layer.provide(dependencies),
+          ),
+        ),
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.provideService(McpInvocationContext, {
+          environmentId: EnvironmentId.make("environment"),
+          threadId: THREAD_ID,
+          providerSessionId: "session",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          capabilities: new Set<"automations">(allowed ? ["automations"] : []),
+          issuedAt: 1,
+        }),
+      ),
     call: (id = automation.id) => invoke("delete_automation", { id }),
     save: (params: Parameters<typeof toolkit.handle<"save_automation">>[1]) =>
       invoke("save_automation", params),
     actions,
   };
 });
+it.effect("lists project automations as an MCP object, including empty results", () =>
+  Effect.gen(function* () {
+    for (const projectIds of [[PROJECT_ID], [ProjectId.make("other")]]) {
+      const harness = yield* makeHarness(projectIds);
+      const result = yield* harness.mcp("list_automations");
+      const expected = { automations: projectIds[0] === PROJECT_ID ? [automation] : [] };
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toEqual(expected);
+      expect(harness.actions).toEqual([]);
+    }
+  }).pipe(Effect.scoped),
+);
 it.effect(
   "deletes an automation owned by the current project through the normal service action",
   () =>
@@ -164,6 +234,61 @@ const saveInput = {
   executionMode: "local" as const,
   continueThread: false,
 };
+it.effect("serializes successful save, pause, resume and delete MCP responses", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness();
+    const saved = yield* harness.mcp("save_automation", saveInput);
+    expect(saved.isError).toBe(false);
+    expect(saved.structuredContent).toMatchObject({ name: saveInput.name, status: "paused" });
+    for (const status of ["paused", "active"]) {
+      const result = yield* harness.mcp("set_automation_status", { id: automation.id, status });
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({ id: automation.id, status });
+    }
+    const deleted = yield* harness.mcp("delete_automation", { id: automation.id });
+    expect(deleted.isError).toBe(false);
+    expect(deleted.structuredContent).toEqual({ id: automation.id, deleted: true });
+  }).pipe(Effect.scoped),
+);
+
+it.effect("serializes capability failures for every automation MCP tool", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness([PROJECT_ID], false);
+    const calls = [
+      ["list_automations", {}],
+      ["save_automation", saveInput],
+      ["set_automation_status", { id: automation.id, status: "paused" }],
+      ["delete_automation", { id: automation.id }],
+    ] as const;
+    for (const [name, args] of calls) {
+      const result = yield* harness.mcp(name, args);
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual([
+        { type: "text", text: expect.stringContaining("automations") },
+      ]);
+    }
+    expect(harness.actions).toEqual([]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("serializes missing-automation errors for all mutation tools", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness();
+    const calls = [
+      ["save_automation", { ...saveInput, id: "missing" }],
+      ["set_automation_status", { id: "missing", status: "paused" }],
+      ["delete_automation", { id: "missing" }],
+    ] as const;
+    for (const [name, args] of calls) {
+      const result = yield* harness.mcp(name, args);
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual([
+        { type: "text", text: "Automation not found in this project." },
+      ]);
+    }
+    expect(harness.actions).toEqual([]);
+  }).pipe(Effect.scoped),
+);
 it.effect("agent saves accept explicit model, reasoning options and permissions", () =>
   Effect.gen(function* () {
     const harness = yield* makeHarness();

@@ -25,7 +25,7 @@ export const AutomationsToolkit = Toolkit.make(
   Tool.make("list_automations", {
     description:
       "List automations for this thread's project. Use their ids to update, pause, resume or delete a schedule.",
-    success: Schema.Array(Automation),
+    success: Schema.Struct({ automations: Schema.Array(Automation) }),
     failure,
     dependencies,
   }).annotate(Tool.Readonly, true),

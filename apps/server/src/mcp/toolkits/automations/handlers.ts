@@ -28,7 +28,7 @@ const context = Effect.gen(function* () {
   };
 });
 export const AutomationsToolkitHandlersLive = AutomationsToolkit.toLayer({
-  list_automations: () => context.pipe(Effect.map((value) => value.automations)),
+  list_automations: () => context.pipe(Effect.map((value) => ({ automations: value.automations }))),
   save_automation: (input) =>
     Effect.gen(function* () {
       const { thread, service, automations } = yield* context;
