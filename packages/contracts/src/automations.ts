@@ -51,7 +51,12 @@ export const AutomationAction = Schema.Union([
     read: Schema.Boolean,
     archived: Schema.Boolean,
   }),
-  Schema.Struct({ type: Schema.Literal("read-all") }),
+  Schema.Struct({ type: Schema.Literal("delete-run"), id: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("delete-all-read"),
+    automationId: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({ type: Schema.Literal("read-all"), automationId: Schema.optional(Schema.String) }),
 ]);
 export type AutomationAction = typeof AutomationAction.Type;
 export class AutomationError extends Schema.TaggedError<AutomationError>()("AutomationError", {

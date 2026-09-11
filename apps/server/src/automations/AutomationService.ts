@@ -140,7 +140,7 @@ export class AutomationService extends Context.Service<
               messageId: MessageId.make(`automation-message-${run.id}`),
               role: "user",
               attachments: [],
-              text: `${automation.prompt}\n\nThis is a scheduled automation. Report actionable findings. If there is nothing to report, reply with exactly AUTOMATION_NO_FINDINGS.`,
+              text: automation.prompt,
             },
           });
         });
@@ -238,10 +238,25 @@ export class AutomationService extends Context.Service<
                 const run = snapshot.runs.find((item) => item.id === input.id);
                 if (!run) return yield* new AutomationError({ message: "Run not found." });
                 yield* store.saveRun({ ...run, read: input.read, archived: input.archived });
+              } else if (input.type === "delete-run") {
+                const run = snapshot.runs.find((item) => item.id === input.id);
+                if (!run) return yield* new AutomationError({ message: "Run not found." });
+                if (run.status === "queued" || run.status === "running") {
+                  return yield* new AutomationError({
+                    message: "Wait for the run to finish before deleting its result.",
+                  });
+                }
+                yield* store.removeRun(input.id);
+              } else if (input.type === "delete-all-read") {
+                yield* store.removeAllReadRuns(input.automationId);
               } else if (input.type === "read-all") {
                 yield* store.transaction(
                   Effect.forEach(
-                    snapshot.runs.filter((run) => !run.read),
+                    snapshot.runs.filter(
+                      (run) =>
+                        !run.read &&
+                        (!input.automationId || run.automationId === input.automationId),
+                    ),
                     (run) => store.saveRun({ ...run, read: true }),
                     { discard: true },
                   ),
@@ -327,17 +342,6 @@ export class AutomationService extends Context.Service<
                     const runs = yield* store.activeRuns();
                     for (const run of runs) {
                       if (run.threadId !== event.aggregateId) continue;
-                      // Stream completion events can contain an empty delta. Read the final projection.
-                      const message =
-                        completed && event.payload.assistantMessageId
-                          ? yield* query.getTurnStartMessage({
-                              threadId: run.threadId,
-                              messageId: event.payload.assistantMessageId,
-                            })
-                          : Option.none();
-                      const noFindings =
-                        Option.isSome(message) &&
-                        message.value.message.text.trim() === "AUTOMATION_NO_FINDINGS";
                       yield* store.saveRun({
                         ...run,
                         status: completed ? "completed" : failed ? "failed" : run.status,
@@ -346,8 +350,6 @@ export class AutomationService extends Context.Service<
                           failed && event.type === "thread.session-set"
                             ? (event.payload.session.lastError ?? "The provider session stopped.")
                             : null,
-                        archived: noFindings || run.archived,
-                        read: noFindings || run.read,
                       });
                     }
                   }),

@@ -4,7 +4,6 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { formatEnvironmentQueryError } from "../../state/query";
 import { useState } from "react";
 import {
-  ArchiveIcon,
   ArrowUpRightIcon,
   CheckCheckIcon,
   Clock3Icon,
@@ -30,7 +29,18 @@ import { useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { isElectron } from "../../env";
 import { Button } from "../ui/button";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
@@ -90,12 +100,20 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
   const projects = useProjects().filter((project) => project.environmentId === environmentId);
   const [editor, setEditor] = useState<Automation | "new" | null>(null);
   const [template, setTemplate] = useState<{ name: string; prompt: string } | undefined>();
-  const [tab, setTab] = useState<"tasks" | "inbox" | "archived">("tasks");
+  const [tab, setTab] = useState<"tasks" | "inbox">("tasks");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [resultAutomationId, setResultAutomationId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [runClosing, setRunClosing] = useState(false);
+  const [deleteClosing, setDeleteClosing] = useState(false);
+  const [runTarget, setRunTarget] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<
+    | { type: "delete" | "delete-run"; id: string; name: string }
+    | { type: "delete-all-read"; automationId?: string }
+    | null
+  >(null);
   const data = AsyncResult.isSuccess(result) ? result.value : null;
 
   async function act(input: AutomationAction) {
@@ -124,22 +142,28 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
         (filter === "all" || item.status === filter) &&
         `${item.name} ${item.prompt}`.toLowerCase().includes(search.toLowerCase()),
     ) ?? [];
+  const resultAutomations = new Map(data?.automations.map((item) => [item.id, item.name]));
+  for (const run of data?.runs ?? []) {
+    if (!run.archived && !resultAutomations.has(run.automationId)) {
+      resultAutomations.set(run.automationId, run.automationName);
+    }
+  }
   const runs =
     data?.runs.filter(
-      (run) =>
-        run.archived === (tab === "archived") &&
-        run.automationName.toLowerCase().includes(search.toLowerCase()),
+      (run) => !run.archived && (!resultAutomationId || run.automationId === resultAutomationId),
     ) ?? [];
+  const hasUnreadResults = runs.some(
+    (run) => !run.read && !["queued", "running"].includes(run.status),
+  );
+  const hasReadResults = runs.some(
+    (run) => run.read && !["queued", "running"].includes(run.status),
+  );
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-4 pt-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Give recurring work a schedule. Review the results when you return.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
         <Button
+          size="sm"
           disabled={!data || !projects.length}
           onClick={() => {
             setTemplate(undefined);
@@ -158,8 +182,7 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
         {(
           [
             ["tasks", "Automations", TimerIcon],
-            ["inbox", "Inbox", InboxIcon],
-            ["archived", "Archived", ArchiveIcon],
+            ["inbox", "Results", InboxIcon],
           ] as const
         ).map(([value, label, Icon]) => (
           <Button
@@ -228,16 +251,43 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
         <>
           {(data.automations.length > 0 || tab !== "tasks") && (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="relative min-w-48 flex-1 sm:max-w-xs">
-                <SearchIcon className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-                <Input
-                  aria-label="Search automations"
-                  placeholder="Search automations"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
+              {tab === "tasks" && (
+                <div className="relative min-w-48 flex-1 sm:max-w-xs">
+                  <SearchIcon className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
+                  <Input
+                    aria-label="Search automations"
+                    placeholder="Search automations"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              )}
+              {tab === "inbox" && (
+                <Select
+                  value={resultAutomationId}
+                  onValueChange={(value) => setResultAutomationId(value ?? "")}
+                >
+                  <SelectTrigger
+                    aria-label="Filter results by automation"
+                    className="w-full sm:max-w-xs"
+                  >
+                    <SelectValue>
+                      {resultAutomationId
+                        ? (resultAutomations.get(resultAutomationId) ?? "Unavailable automation")
+                        : "All automations"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup alignItemWithTrigger={false}>
+                    <SelectItem value="">All automations</SelectItem>
+                    {Array.from(resultAutomations, ([id, name]) => (
+                      <SelectItem key={id} value={id}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              )}
               {tab === "tasks" ? (
                 <div className="flex gap-1" aria-label="Filter status">
                   {["all", "active", "paused"].map((value) => (
@@ -254,15 +304,37 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
                   ))}
                 </div>
               ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy || !unread}
-                  onClick={() => void act({ type: "read-all" })}
-                >
-                  <CheckCheckIcon />
-                  Mark all as read
-                </Button>
+                <div className="ml-auto flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy || !hasUnreadResults}
+                    onClick={() =>
+                      void act({
+                        type: "read-all",
+                        ...(resultAutomationId ? { automationId: resultAutomationId } : {}),
+                      })
+                    }
+                  >
+                    <CheckCheckIcon />
+                    Mark all as read
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy || !hasReadResults}
+                    onClick={() => {
+                      setError(null);
+                      setDeleteTarget({
+                        type: "delete-all-read",
+                        ...(resultAutomationId ? { automationId: resultAutomationId } : {}),
+                      });
+                    }}
+                  >
+                    <Trash2Icon />
+                    Delete all read
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -341,86 +413,117 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
                         <TimerIcon className="size-4" />
                       )}
                     </div>
-                    <button
-                      className="min-w-40 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => setEditor(item)}
-                    >
+                    <div className="min-w-40 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{item.name}</span>
+                        <button
+                          type="button"
+                          className="cursor-pointer text-left text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => setEditor(item)}
+                        >
+                          {item.name}
+                        </button>
                         <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] capitalize text-muted-foreground">
                           {running ? "Running" : item.status}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {describeAutomationSchedule(item.rrule)} · {item.timezone}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {item.nextRunAt
-                          ? `Next: ${new Date(item.nextRunAt).toLocaleString()}`
-                          : "Schedule paused"}{" "}
-                        ·{" "}
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
                         {item.projectIds
                           .map(
                             (id) =>
                               projects.find((p) => p.id === id)?.title ?? "Unavailable project",
                           )
-                          .join(", ")}
+                          .join(", ")}{" "}
+                        ·{" "}
+                        {describeAutomationSchedule(item.rrule).replace(/^./, (c) =>
+                          c.toUpperCase(),
+                        )}{" "}
+                        ·{" "}
+                        {item.nextRunAt
+                          ? `Next: ${new Date(item.nextRunAt).toLocaleString()}`
+                          : "Schedule paused"}
                       </p>
-                    </button>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy || running}
-                        onClick={() => void act({ type: "run", id: item.id })}
-                      >
-                        <PlayIcon />
-                        Run now
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={busy}
-                        aria-label={`${item.status === "active" ? "Pause" : "Resume"} ${item.name}`}
-                        onClick={() =>
-                          void act({
-                            type: item.status === "active" ? "pause" : "resume",
-                            id: item.id,
-                          })
-                        }
-                      >
-                        {item.status === "active" ? <PauseIcon /> : <RotateCcwIcon />}
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={busy}
-                        aria-label={`Delete ${item.name}`}
-                        onClick={() => setDeleteId(item.id)}
-                      >
-                        <Trash2Icon />
-                      </Button>
                     </div>
-                    {deleteId === item.id && (
-                      <div className="flex w-full flex-wrap items-center gap-3 rounded-lg bg-muted p-3 text-sm">
-                        <span className="flex-1">
-                          Delete this automation? Existing runs and threads will remain.
-                        </span>
-                        <Button size="sm" variant="ghost" onClick={() => setDeleteId(null)}>
-                          Cancel
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={busy}
-                          onClick={async () => {
-                            if (await act({ type: "delete", id: item.id })) setDeleteId(null);
-                          }}
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`View results for ${item.name}`}
+                              onClick={() => {
+                                setResultAutomationId(item.id);
+                                setTab("inbox");
+                              }}
+                            />
+                          }
                         >
-                          Delete automation
-                        </Button>
-                      </div>
-                    )}
+                          <InboxIcon />
+                        </TooltipTrigger>
+                        <TooltipPopup>View results</TooltipPopup>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              disabled={busy || running}
+                              aria-label={`Run ${item.name} now`}
+                              onClick={() => {
+                                setError(null);
+                                setRunTarget({ id: item.id, name: item.name });
+                              }}
+                            />
+                          }
+                        >
+                          <PlayIcon />
+                        </TooltipTrigger>
+                        <TooltipPopup>Run now</TooltipPopup>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              disabled={busy}
+                              aria-label={`${item.status === "active" ? "Pause" : "Resume"} ${item.name}`}
+                              onClick={() =>
+                                void act({
+                                  type: item.status === "active" ? "pause" : "resume",
+                                  id: item.id,
+                                })
+                              }
+                            />
+                          }
+                        >
+                          {item.status === "active" ? <PauseIcon /> : <RotateCcwIcon />}
+                        </TooltipTrigger>
+                        <TooltipPopup>
+                          {item.status === "active" ? "Pause automation" : "Resume automation"}
+                        </TooltipPopup>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              disabled={busy}
+                              aria-label={`Delete ${item.name}`}
+                              onClick={() => {
+                                setError(null);
+                                setDeleteTarget({ type: "delete", id: item.id, name: item.name });
+                              }}
+                            />
+                          }
+                        >
+                          <Trash2Icon />
+                        </TooltipTrigger>
+                        <TooltipPopup>Delete automation</TooltipPopup>
+                      </Tooltip>
+                    </div>
                   </div>
                 );
               })}
@@ -431,12 +534,10 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
                 <div className="flex flex-col items-center p-12 text-center">
                   <InboxIcon className="mb-4 size-6 text-muted-foreground" />
                   <h2 className="text-sm font-medium">
-                    {tab === "archived" ? "No archived runs" : "You're all caught up"}
+                    {resultAutomationId ? "No results for this automation" : "You're all caught up"}
                   </h2>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {tab === "archived"
-                      ? "Archived results will appear here."
-                      : "Results from your automations will appear here."}
+                    Results from your automations will appear here.
                   </p>
                 </div>
               )}
@@ -471,15 +572,16 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
                     {run.error && <p className="mt-2 text-xs text-destructive">{run.error}</p>}
                   </div>
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="ghost"
-                    disabled={busy}
-                    onClick={() =>
-                      void act({ type: "review", id: run.id, read: true, archived: !run.archived })
-                    }
+                    disabled={busy || run.status === "queued" || run.status === "running"}
+                    aria-label={`Delete result for ${run.automationName}`}
+                    onClick={() => {
+                      setError(null);
+                      setDeleteTarget({ type: "delete-run", id: run.id, name: run.automationName });
+                    }}
                   >
-                    {run.archived ? <RotateCcwIcon /> : <ArchiveIcon />}
-                    {run.archived ? "Restore" : "Archive"}
+                    <Trash2Icon />
                   </Button>
                 </div>
               ))}
@@ -492,6 +594,111 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
           </p>
         </>
       )}
+      <AlertDialog
+        open={deleteTarget !== null && !deleteClosing}
+        onOpenChange={(open) => {
+          if (!open && !busy) setDeleteClosing(true);
+        }}
+        onOpenChangeComplete={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteClosing(false);
+          }
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTarget?.type === "delete-all-read"
+                ? "Delete all read results?"
+                : `${deleteTarget?.type === "delete" ? "Delete automation" : "Delete result"} "${deleteTarget?.name}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.type === "delete-all-read"
+                ? deleteTarget.automationId
+                  ? "All read results from finished runs of this automation will be permanently deleted. Their threads and worktrees will remain."
+                  : "All read results from finished runs will be permanently deleted. Their threads and worktrees will remain."
+                : deleteTarget?.type === "delete"
+                  ? "This automation will stop running. Existing results, threads, and worktrees will remain."
+                  : "This result will be permanently deleted. Its thread and worktree will remain."}
+            </AlertDialogDescription>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" disabled={busy} />}>
+              Cancel
+            </AlertDialogClose>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={async () => {
+                if (!deleteTarget) return;
+                if (
+                  await act(
+                    deleteTarget.type === "delete-all-read"
+                      ? deleteTarget
+                      : { type: deleteTarget.type, id: deleteTarget.id },
+                  )
+                ) {
+                  setDeleteClosing(true);
+                }
+              }}
+            >
+              {busy
+                ? "Deleting…"
+                : deleteTarget?.type === "delete-all-read"
+                  ? "Delete all read"
+                  : deleteTarget?.type === "delete"
+                    ? "Delete automation"
+                    : "Delete result"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+      <AlertDialog
+        open={runTarget !== null && !runClosing}
+        onOpenChange={(open) => {
+          if (!open && !busy) setRunClosing(true);
+        }}
+        onOpenChangeComplete={(open) => {
+          if (!open) {
+            setRunTarget(null);
+            setRunClosing(false);
+          }
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run "{runTarget?.name}" now?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will start a run using this automation's saved settings.
+            </AlertDialogDescription>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" disabled={busy} />}>
+              Cancel
+            </AlertDialogClose>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                if (!runTarget) return;
+                if (await act({ type: "run", id: runTarget.id })) setRunClosing(true);
+              }}
+            >
+              {busy ? "Starting…" : "Run now"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
       {editor && (
         <AutomationEditor
           environmentId={environmentId}

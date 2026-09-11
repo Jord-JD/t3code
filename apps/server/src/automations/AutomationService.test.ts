@@ -101,7 +101,7 @@ it.effect(
       if (turn?.type === "thread.turn.start") {
         assert.equal(turn.runtimeMode, input.runtimeMode);
         assert.deepEqual(turn.modelSelection, input.modelSelection);
-        assert.include(turn.message.text, input.prompt);
+        assert.equal(turn.message.text, input.prompt);
       }
       const overlap = yield* service.action({ type: "run", id: input.id }).pipe(Effect.flip);
       assert.include(overlap.message, "already has a run");
@@ -207,7 +207,7 @@ it.effect("isolates Git runs in a worktree and leaves non-Git projects local", (
   }),
 );
 
-it.effect("archives no-findings results using the completed message projection", () =>
+it.effect("keeps completed results unread and visible regardless of response text", () =>
   Effect.gen(function* () {
     const event = yield* Deferred.make<OrchestrationEvent>();
     const drained = yield* Deferred.make<void>();
@@ -292,8 +292,8 @@ it.effect("archives no-findings results using the completed message projection",
       yield* Deferred.await(drained);
       const completed = (yield* service.list).runs[0]!;
       assert.equal(completed.status, "completed");
-      assert.isTrue(completed.archived);
-      assert.isTrue(completed.read);
+      assert.isFalse(completed.archived);
+      assert.isFalse(completed.read);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -499,3 +499,37 @@ for (const updating of [false, true]) {
     );
   }
 }
+
+it.effect("read and delete bulk actions respect the selected automation", () =>
+  Effect.gen(function* () {
+    const service = yield* AutomationService;
+    const store = yield* makeAutomationStore;
+    for (const automationId of ["selected", "other"]) {
+      yield* store.saveRun({
+        id: automationId,
+        automationId,
+        automationName: automationId,
+        projectId: ProjectId.make("project"),
+        threadId: ThreadId.make(automationId),
+        status: "completed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:00:00.000Z",
+        error: null,
+        read: false,
+        archived: false,
+      });
+    }
+    yield* service.action({ type: "read-all", automationId: "selected" });
+    const marked = yield* service.list;
+    assert.equal(marked.runs.find((run) => run.id === "selected")?.read, true);
+    assert.equal(marked.runs.find((run) => run.id === "other")?.read, false);
+    yield* service.action({ type: "read-all" });
+    yield* service.action({ type: "delete-all-read", automationId: "selected" });
+    assert.deepEqual(
+      (yield* service.list).runs.map((run) => run.id),
+      ["other"],
+    );
+    yield* service.action({ type: "delete-all-read" });
+    assert.deepEqual((yield* service.list).runs, []);
+  }).pipe(Effect.provide(provide([]))),
+);

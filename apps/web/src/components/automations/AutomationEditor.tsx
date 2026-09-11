@@ -37,6 +37,15 @@ import { ComposerControlSeparator } from "../chat/ComposerControl";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Switch } from "../ui/switch";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -76,9 +85,7 @@ export function AutomationEditor({
   const [id] = useState(() => automation?.id ?? randomUUID());
   const [name, setName] = useState(automation?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(automation?.prompt ?? template?.prompt ?? "");
-  const [projectIds, setProjectIds] = useState(
-    automation?.projectIds ?? (projects[0] ? [projects[0].id] : []),
-  );
+  const [projectId, setProjectId] = useState(automation?.projectIds[0] ?? projects[0]?.id ?? null);
   const [selection, setSelection] = useState<ModelSelection | null>(
     () =>
       automation?.modelSelection ??
@@ -103,9 +110,7 @@ export function AutomationEditor({
       : selection
         ? getModelDisabledReason(selection.instanceId, selection.model)
         : null;
-  const [timezone, setTimezone] = useState(
-    automation?.timezone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
+  const timezone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [initialSchedule] = useState(() => parseEditorSchedule(automation?.rrule));
   const [cadence, setCadence] = useState(initialSchedule.cadence);
   const [time, setTime] = useState(initialSchedule.time);
@@ -125,7 +130,7 @@ export function AutomationEditor({
   const draft = JSON.stringify({
     name,
     prompt,
-    projectIds,
+    projectId,
     selection,
     executionMode,
     runtimeMode,
@@ -158,17 +163,6 @@ export function AutomationEditor({
       return { dates: [], error: error instanceof Error ? error.message : "Check the schedule." };
     }
   }, [rule, timezone, cadence, days.length, automation]);
-  const timezones = useMemo(
-    () => [
-      ...new Set([
-        new Intl.DateTimeFormat().resolvedOptions().timeZone,
-        "UTC",
-        ...Intl.supportedValuesOf("timeZone"),
-      ]),
-    ],
-    [],
-  );
-
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
@@ -181,8 +175,8 @@ export function AutomationEditor({
       setValidation("Enter a name and instructions for this automation.");
       return;
     }
-    if (!projectIds.length || !selection) {
-      setValidation("Choose at least one project and a model.");
+    if (!projectId || !selection) {
+      setValidation("Choose a project and a model.");
       return;
     }
     if (modelError || preview.error) {
@@ -194,7 +188,7 @@ export function AutomationEditor({
       id,
       name: name.trim(),
       prompt: prompt.trim(),
-      projectIds,
+      projectIds: [projectId],
       modelSelection: selection,
       runtimeMode,
       executionMode,
@@ -249,8 +243,8 @@ export function AutomationEditor({
               disabled={busy}
               className="grid min-w-0 disabled:opacity-60 md:grid-cols-[minmax(0,1fr)_320px]"
             >
-              <div className="min-w-0 space-y-5 p-6">
-                <label className="block space-y-2 text-sm font-medium">
+              <div className="flex min-w-0 flex-col gap-5 p-6">
+                <label className="grid min-w-0 gap-2 text-sm font-medium">
                   Name
                   <Input
                     autoFocus
@@ -261,7 +255,7 @@ export function AutomationEditor({
                     required
                   />
                 </label>
-                <label className="block space-y-2 text-sm font-medium">
+                <label className="grid min-w-0 gap-2 text-sm font-medium">
                   Instructions
                   <Textarea
                     className="min-h-36 resize-y font-normal"
@@ -272,32 +266,34 @@ export function AutomationEditor({
                     required
                   />
                 </label>
-                <p className="-mt-2 text-xs text-muted-foreground">
-                  Reference installed skills with $skill-name.
-                </p>
-                <fieldset className="space-y-2">
-                  <legend className="mb-2 text-sm font-medium">Projects</legend>
-                  <div className="max-h-28 space-y-2 overflow-y-auto rounded-lg border p-3">
+                <label className="grid min-w-0 gap-2 text-sm font-medium">
+                  Project
+                  <select
+                    className={selectClass}
+                    value={projectId ?? ""}
+                    onChange={(e) => {
+                      setThreadId(null);
+                      setProjectId(
+                        projects.find((project) => project.id === e.target.value)?.id ?? null,
+                      );
+                    }}
+                    required
+                  >
+                    <option value="" disabled>
+                      Choose a project
+                    </option>
+                    {projectId && !projects.some((project) => project.id === projectId) && (
+                      <option value={projectId ?? ""} disabled>
+                        Unavailable project
+                      </option>
+                    )}
                     {projects.map((project) => (
-                      <label key={project.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={projectIds.includes(project.id)}
-                          onChange={(e) => {
-                            setThreadId(null);
-                            setProjectIds(
-                              e.target.checked
-                                ? [...projectIds, project.id]
-                                : projectIds.filter((id) => id !== project.id),
-                            );
-                          }}
-                          className="accent-primary"
-                        />
+                      <option key={project.id} value={project.id}>
                         {project.title}
-                      </label>
+                      </option>
                     ))}
-                  </div>
-                </fieldset>
+                  </select>
+                </label>
                 <div className="space-y-2">
                   <span className="block text-sm font-medium">Model</span>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border p-2">
@@ -360,7 +356,7 @@ export function AutomationEditor({
                   </summary>
                   <div className="space-y-4 border-t p-4">
                     <div className="grid gap-4">
-                      <label className="space-y-2 text-sm font-medium">
+                      <label className="grid min-w-0 gap-2 text-sm font-medium">
                         Run in
                         <select
                           className={selectClass}
@@ -375,8 +371,8 @@ export function AutomationEditor({
                         </select>
                       </label>
                     </div>
-                    {executionMode === "local" && projectIds.length === 1 && (
-                      <label className="block space-y-2 text-sm font-medium">
+                    {executionMode === "local" && projectId && (
+                      <label className="grid min-w-0 gap-2 text-sm font-medium">
                         Conversation
                         <select
                           className={selectClass}
@@ -404,7 +400,7 @@ export function AutomationEditor({
                             <ThreadOption
                               key={ref.threadId}
                               threadRef={ref}
-                              projectId={projectIds[0]!}
+                              projectId={projectId}
                             />
                           ))}
                         </select>
@@ -452,7 +448,7 @@ export function AutomationEditor({
                       onCheckedChange={(checked) => setStatus(checked ? "active" : "paused")}
                     />
                   </div>
-                  <label className="block space-y-2 text-sm font-medium">
+                  <label className="grid min-w-0 gap-2 text-sm font-medium">
                     Repeat
                     <select
                       className={selectClass}
@@ -510,7 +506,7 @@ export function AutomationEditor({
                     </fieldset>
                   )}
                   {cadence === "hourly" ? (
-                    <label className="block space-y-2 text-sm font-medium">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium">
                       Hours between runs
                       <Input
                         type="number"
@@ -521,7 +517,7 @@ export function AutomationEditor({
                       />
                     </label>
                   ) : cadence !== "custom" ? (
-                    <label className="block space-y-2 text-sm font-medium">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium">
                       At
                       <Input
                         aria-label="Run time"
@@ -532,7 +528,7 @@ export function AutomationEditor({
                       />
                     </label>
                   ) : (
-                    <label className="block space-y-2 text-sm font-medium">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium">
                       Recurrence rule
                       <Textarea
                         value={customRule}
@@ -546,21 +542,6 @@ export function AutomationEditor({
                       </span>
                     </label>
                   )}
-                  <label className="block space-y-2 text-sm font-medium">
-                    Time zone
-                    <Input
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      list="automation-timezones"
-                      placeholder="Search time zones…"
-                      required
-                    />
-                  </label>
-                  <datalist id="automation-timezones">
-                    {timezones.map((zone) => (
-                      <option key={zone} value={zone} />
-                    ))}
-                  </datalist>
                   <div
                     aria-live="polite"
                     className={`rounded-lg border bg-background p-3 ${preview.error ? "border-destructive/30" : ""}`}
@@ -613,40 +594,37 @@ export function AutomationEditor({
                 {validation || modelError || error}
               </p>
             )}
-            {confirmDiscard ? (
-              <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
-                <p className="text-sm">Discard your unsaved changes?</p>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={() => setConfirmDiscard(false)}>
-                    Keep editing
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={onClose}>
-                    Discard changes
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="ml-auto flex gap-2">
-                  <Button type="button" variant="ghost" disabled={busy} onClick={requestClose}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={
-                      busy ||
-                      !selection ||
-                      Boolean(preview.error || modelError) ||
-                      !projectIds.length
-                    }
-                  >
-                    {busy ? "Saving…" : automation ? "Save changes" : "Create automation"}
-                  </Button>
-                </div>
-              </div>
-            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" disabled={busy} onClick={requestClose}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={busy || !selection || Boolean(preview.error || modelError) || !projectId}
+              >
+                {busy ? "Saving…" : automation ? "Save changes" : "Create automation"}
+              </Button>
+            </div>
           </footer>
         </form>
+        <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+          <AlertDialogPopup>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Your changes to this automation will be lost.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogClose render={<Button variant="outline" />}>
+                Keep editing
+              </AlertDialogClose>
+              <Button variant="destructive" onClick={onClose}>
+                Discard changes
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogPopup>
+        </AlertDialog>
       </DialogPopup>
     </Dialog>
   );

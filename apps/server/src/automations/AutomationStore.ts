@@ -14,7 +14,22 @@ export const makeAutomationStore = Effect.gen(function* () {
   const decodeRun = Schema.decodeUnknownEffect(Schema.fromJsonString(AutomationRun));
   const encodeAutomation = Schema.encodeEffect(Schema.fromJsonString(Automation));
   const encodeRun = Schema.encodeEffect(Schema.fromJsonString(AutomationRun));
+  const reconcileDeletedThreads = () =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`DELETE FROM automation_runs WHERE thread_id IN (
+          SELECT thread_id FROM projection_threads WHERE deleted_at IS NOT NULL
+        )`;
+        yield* sql`UPDATE automations SET next_run_at = NULL,
+          definition = json_set(definition, '$.status', 'paused', '$.nextRunAt', NULL)
+          WHERE deleted_at IS NULL AND json_extract(definition, '$.status') = 'active'
+          AND json_extract(definition, '$.threadId') IN (
+            SELECT thread_id FROM projection_threads WHERE deleted_at IS NOT NULL
+          )`;
+      }),
+    );
   const listAutomations = Effect.fn("AutomationStore.listAutomations")(function* () {
+    yield* reconcileDeletedThreads();
     const definitions = yield* sql<{
       definition: string;
     }>`SELECT definition FROM automations WHERE deleted_at IS NULL ORDER BY id`;
@@ -25,11 +40,12 @@ export const makeAutomationStore = Effect.gen(function* () {
     AutomationError
   > {
     return yield* Effect.gen(function* () {
+      const automations = yield* listAutomations();
       const rows = yield* sql<{
         data: string;
       }>`SELECT data FROM automation_runs ORDER BY rowid DESC LIMIT 500`;
       return {
-        automations: yield* listAutomations(),
+        automations,
         runs: yield* Effect.forEach(rows, (row) => decodeRun(row.data)),
       };
     }).pipe(
@@ -46,13 +62,16 @@ export const makeAutomationStore = Effect.gen(function* () {
   const saveRun = Effect.fn("AutomationStore.saveRun")(function* (run: AutomationRun) {
     const data = yield* encodeRun(run);
     yield* sql`INSERT INTO automation_runs(id, automation_id, thread_id, status, data)
-      VALUES (${run.id}, ${run.automationId}, ${run.threadId}, ${run.status}, ${data})
+      SELECT ${run.id}, ${run.automationId}, ${run.threadId}, ${run.status}, ${data}
+      WHERE NOT EXISTS (SELECT 1 FROM projection_threads WHERE thread_id = ${run.threadId} AND deleted_at IS NOT NULL)
       ON CONFLICT(id) DO UPDATE SET status=excluded.status, data=excluded.data`;
   });
   const activeRuns = Effect.fn("AutomationStore.activeRuns")(function* () {
     const rows = yield* sql<{
       data: string;
-    }>`SELECT data FROM automation_runs WHERE status IN ('queued', 'running')`;
+    }>`SELECT data FROM automation_runs WHERE status IN ('queued', 'running')
+      AND NOT EXISTS (SELECT 1 FROM projection_threads
+        WHERE projection_threads.thread_id = automation_runs.thread_id AND deleted_at IS NOT NULL)`;
     return yield* Effect.forEach(rows, (row) => decodeRun(row.data));
   });
   const interruptActiveRuns = Effect.fn("AutomationStore.interruptActiveRuns")(function* (
@@ -74,6 +93,12 @@ export const makeAutomationStore = Effect.gen(function* () {
   });
   const remove = (id: string, now: string) =>
     sql`UPDATE automations SET deleted_at=${now}, next_run_at=NULL WHERE id=${id}`;
+  const removeRun = (id: string) =>
+    sql`DELETE FROM automation_runs WHERE id=${id} AND status NOT IN ('queued', 'running')`;
+  const removeAllReadRuns = (automationId?: string) =>
+    sql`DELETE FROM automation_runs WHERE json_extract(data, '$.read') = 1
+      AND json_extract(data, '$.archived') = 0 AND status NOT IN ('queued', 'running')
+      AND (${automationId ?? null} IS NULL OR automation_id = ${automationId ?? null})`;
   return {
     list,
     listAutomations,
@@ -81,6 +106,8 @@ export const makeAutomationStore = Effect.gen(function* () {
     saveRun,
     activeRuns,
     remove,
+    removeRun,
+    removeAllReadRuns,
     interruptActiveRuns,
     transaction: sql.withTransaction,
   };

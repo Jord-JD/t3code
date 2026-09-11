@@ -1,3 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { AutomationsPage } from "../components/automations/AutomationsPage";
-export const Route = createFileRoute("/automations")({ component: AutomationsPage });
+
+export const Route = createFileRoute("/automations")({
+  beforeLoad: ({ context }) => {
+    if (
+      context.authGateState.status !== "authenticated" &&
+      context.authGateState.status !== "hosted-static"
+    ) {
+      throw redirect({ to: "/pair", replace: true });
+    }
+  },
+  component: AutomationsPage,
+});
