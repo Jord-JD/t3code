@@ -26,7 +26,7 @@ function makeThread(): OrchestrationThreadShell {
     projectId: PROJECT_ID,
     title: "Thread",
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-    runtimeMode: "full-access",
+    runtimeMode: "approval-required",
     interactionMode: "default",
     branch: null,
     worktreePath: null,
@@ -180,7 +180,7 @@ it.effect("agent saves accept explicit model, reasoning options and permissions"
   }),
 );
 it.effect(
-  "agent creates inherit thread settings and edits preserve saved settings when omitted",
+  "agent creates inherit the model and default to full access; edits preserve saved settings",
   () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();
@@ -188,7 +188,7 @@ it.effect(
       expect(harness.actions[0]).toMatchObject({
         automation: {
           modelSelection: makeThread().modelSelection,
-          runtimeMode: makeThread().runtimeMode,
+          runtimeMode: "full-access",
         },
       });
       yield* harness.save({ ...saveInput, id: automation.id });

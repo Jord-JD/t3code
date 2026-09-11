@@ -84,7 +84,7 @@ export function AutomationEditor({
     automation?.executionMode ?? "worktree",
   );
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(
-    automation?.runtimeMode ?? "approval-required",
+    automation?.runtimeMode ?? "full-access",
   );
   const [threadId, setThreadId] = useState<ThreadId | null>(automation?.threadId ?? null);
   const [timezone, setTimezone] = useState(
@@ -283,8 +283,8 @@ export function AutomationEditor({
                   </div>
                 </fieldset>
                 <div className="space-y-2">
-                  <span className="text-sm font-medium">Model, reasoning &amp; permissions</span>
-                  <div className="flex flex-wrap items-center gap-1 rounded-lg border p-1">
+                  <span className="block text-sm font-medium">Model</span>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border p-2">
                     {selection && activeEntry ? (
                       <>
                         <ProviderModelPicker

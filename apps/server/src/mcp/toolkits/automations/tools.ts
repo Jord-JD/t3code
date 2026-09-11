@@ -31,7 +31,7 @@ export const AutomationsToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("save_automation", {
     description:
-      "Create or update a recurring automation for this project only when the user asks to schedule work. Optionally set modelSelection (provider instance, model and options such as reasoning effort) and runtimeMode (permissions). Omitted settings inherit from the current thread on creation and remain unchanged on updates. Supply a stable id for updates, an IANA timezone and an RFC 5545 RRULE. Set continueThread to return to this conversation; otherwise each run creates a new thread. Skills may be referenced in the prompt.",
+      "Create or update a recurring automation for this project only when the user asks to schedule work. Optionally set modelSelection (provider instance, model and options such as reasoning effort) and runtimeMode (permissions). On creation, an omitted model inherits from the current thread and omitted permissions default to full-access. Omitted settings remain unchanged on updates. Supply a stable id for updates, an IANA timezone and an RFC 5545 RRULE. Set continueThread to return to this conversation; otherwise each run creates a new thread. Skills may be referenced in the prompt.",
     parameters: Schema.Struct({
       id: Schema.optional(Schema.String),
       name: AutomationInput.fields.name,

@@ -51,7 +51,7 @@ export const AutomationsToolkitHandlersLive = AutomationsToolkit.toLayer({
           prompt: input.prompt,
           projectIds: [thread.projectId],
           modelSelection: input.modelSelection ?? prior?.modelSelection ?? thread.modelSelection,
-          runtimeMode: input.runtimeMode ?? prior?.runtimeMode ?? thread.runtimeMode,
+          runtimeMode: input.runtimeMode ?? prior?.runtimeMode ?? "full-access",
           executionMode: input.continueThread ? "local" : input.executionMode,
           threadId: input.continueThread ? thread.id : null,
           rrule: input.rrule,
