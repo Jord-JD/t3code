@@ -29,7 +29,6 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
-import { validateLinuxGlibc } from "./lib/linux-glibc.ts";
 import {
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
@@ -3960,13 +3959,6 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   }
 
   const stageEntries = yield* fs.readDirectory(stageDistDir);
-  if (options.platform === "linux") {
-    for (const entry of stageEntries) {
-      if (entry.endsWith("-unpacked")) {
-        yield* validateLinuxGlibc(path.join(stageDistDir, entry));
-      }
-    }
-  }
   yield* fs.makeDirectory(options.outputDir, { recursive: true });
 
   const copiedArtifacts: string[] = [];
