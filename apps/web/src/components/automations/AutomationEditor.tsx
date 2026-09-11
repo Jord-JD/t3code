@@ -28,6 +28,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
+import { Switch } from "../ui/switch";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 
@@ -126,14 +127,30 @@ export function AutomationEditor({
     try {
       if (cadence === "weekly" && !days.length) throw new Error("Choose at least one day.");
       const now = new Date();
-      return {
-        date: nextAutomationRun(rule, timezone, new Date(automation?.createdAt ?? now), now),
-        error: null,
-      };
+      const anchor = new Date(automation?.createdAt ?? now);
+      const dates: string[] = [];
+      let after = now;
+      for (let i = 0; i < 3; i++) {
+        const date = nextAutomationRun(rule, timezone, anchor, after);
+        dates.push(date);
+        after = new Date(date);
+      }
+      return { dates, error: null };
     } catch (error) {
-      return { date: null, error: error instanceof Error ? error.message : "Check the schedule." };
+      return { dates: [], error: error instanceof Error ? error.message : "Check the schedule." };
     }
   }, [rule, timezone, cadence, days.length, automation]);
+  const timezones = useMemo(
+    () => [
+      ...new Set([
+        new Intl.DateTimeFormat().resolvedOptions().timeZone,
+        "UTC",
+        ...Intl.supportedValuesOf("timeZone"),
+      ]),
+    ],
+    [],
+  );
+
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
@@ -183,7 +200,7 @@ export function AutomationEditor({
         <header className="flex shrink-0 items-start justify-between gap-4 border-b px-6 py-5">
           <div className="space-y-1">
             <DialogTitle>{automation ? "Edit automation" : "New automation"}</DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
+            <DialogDescription className="sr-only">
               Define the work once. Choose when it runs.
             </DialogDescription>
           </div>
@@ -384,122 +401,179 @@ export function AutomationEditor({
                     <Clock3Icon className="size-4 text-muted-foreground" />
                     Schedule
                   </legend>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
+                  <div className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3">
+                    <div>
+                      <label
+                        htmlFor="automation-schedule-enabled"
+                        className="cursor-pointer text-sm font-medium"
+                      >
+                        {status === "active" ? "Active" : "Paused"}
+                      </label>
+                      <p
+                        id="automation-schedule-status"
+                        className="mt-0.5 text-xs text-muted-foreground"
+                      >
+                        {status === "active"
+                          ? "Runs automatically on schedule"
+                          : "Run manually until resumed"}
+                      </p>
+                    </div>
+                    <Switch
+                      id="automation-schedule-enabled"
+                      aria-label="Enable schedule"
+                      aria-describedby="automation-schedule-status"
                       checked={status === "active"}
                       disabled={busy}
-                      onChange={(e) => setStatus(e.target.checked ? "active" : "paused")}
-                      className="size-4 accent-primary"
+                      onCheckedChange={(checked) => setStatus(checked ? "active" : "paused")}
                     />
-                    Enable schedule
-                  </label>
-                  <div className="grid gap-3 grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      Repeat
-                      <select
-                        className={selectClass}
-                        value={cadence}
-                        onChange={(e) => setCadence(e.target.value)}
-                      >
-                        <option value="weekly">Weekly</option>
-                        <option value="daily">Daily</option>
-                        <option value="hourly">Every few hours</option>
-                        <option value="custom">Custom rule</option>
-                      </select>
-                    </label>
-                    {cadence === "hourly" ? (
-                      <label className="space-y-2 text-sm">
-                        Hours between runs
-                        <Input
-                          type="number"
-                          min={1}
-                          max={1000}
-                          value={interval}
-                          onChange={(e) => setIntervalValue(Number(e.target.value))}
-                        />
-                      </label>
-                    ) : cadence !== "custom" ? (
-                      <label className="space-y-2 text-sm">
-                        Time
-                        <Input
-                          type="time"
-                          value={time}
-                          onChange={(e) => setTime(e.target.value)}
-                          required
-                        />
-                      </label>
-                    ) : null}
                   </div>
+                  <label className="block space-y-2 text-sm font-medium">
+                    Repeat
+                    <select
+                      className={selectClass}
+                      value={cadence}
+                      onChange={(e) => setCadence(e.target.value)}
+                    >
+                      <option value="weekly">Weekly</option>
+                      <option value="daily">Daily</option>
+                      <option value="hourly">Hourly</option>
+                      <option value="custom">Custom rule</option>
+                    </select>
+                  </label>
                   {cadence === "weekly" && (
-                    <div className="flex gap-1" aria-label="Days of the week">
-                      {DAYS.map((day, index) => (
+                    <fieldset className="space-y-2">
+                      <legend className="mb-2 text-sm font-medium">On these days</legend>
+                      <div className="flex gap-1">
+                        {DAYS.map((day, index) => (
+                          <Button
+                            key={day}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className={`h-9 min-w-0 flex-1 px-0 text-xs ${days.includes(day) ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15" : "text-muted-foreground"}`}
+                            aria-pressed={days.includes(day)}
+                            onClick={() =>
+                              setDays(
+                                days.includes(day) ? days.filter((d) => d !== day) : [...days, day],
+                              )
+                            }
+                          >
+                            {LABELS[index]}
+                          </Button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1">
                         <Button
-                          key={day}
                           type="button"
                           size="sm"
-                          variant={days.includes(day) ? "default" : "outline"}
-                          className="flex-1 px-1"
-                          aria-pressed={days.includes(day)}
-                          onClick={() =>
-                            setDays(
-                              days.includes(day) ? days.filter((d) => d !== day) : [...days, day],
-                            )
-                          }
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setDays(DAYS.slice(0, 5))}
                         >
-                          {LABELS[index]}
+                          Weekdays
                         </Button>
-                      ))}
-                    </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setDays([...DAYS])}
+                        >
+                          Every day
+                        </Button>
+                      </div>
+                    </fieldset>
                   )}
-                  {cadence === "custom" && (
-                    <label className="block space-y-2 text-sm">
-                      Recurrence rule
+                  {cadence === "hourly" ? (
+                    <label className="block space-y-2 text-sm font-medium">
+                      Hours between runs
                       <Input
-                        value={customRule}
-                        onChange={(e) => setCustomRule(e.target.value)}
-                        className="font-mono text-xs"
-                        placeholder="FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0"
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={interval}
+                        onChange={(e) => setIntervalValue(Number(e.target.value))}
+                      />
+                    </label>
+                  ) : cadence !== "custom" ? (
+                    <label className="block space-y-2 text-sm font-medium">
+                      At
+                      <Input
+                        aria-label="Run time"
+                        type="time"
+                        value={time}
+                        onChange={(e) => setTime(e.target.value)}
                         required
                       />
                     </label>
+                  ) : (
+                    <label className="block space-y-2 text-sm font-medium">
+                      Recurrence rule
+                      <Textarea
+                        value={customRule}
+                        onChange={(e) => setCustomRule(e.target.value)}
+                        className="min-h-20 resize-y font-mono text-xs font-normal"
+                        placeholder="FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0"
+                        required
+                      />
+                      <span className="block text-xs font-normal leading-5 text-muted-foreground">
+                        Use an RRULE for intervals or monthly schedules.
+                      </span>
+                    </label>
                   )}
-                  <label className="block space-y-2 text-sm">
+                  <label className="block space-y-2 text-sm font-medium">
                     Time zone
                     <Input
                       value={timezone}
                       onChange={(e) => setTimezone(e.target.value)}
                       list="automation-timezones"
-                      placeholder="Europe/London"
+                      placeholder="Search time zones…"
                       required
                     />
                   </label>
                   <datalist id="automation-timezones">
-                    {[
-                      ...new Set([
-                        new Intl.DateTimeFormat().resolvedOptions().timeZone,
-                        "UTC",
-                        "Europe/London",
-                        "Europe/Paris",
-                        "America/New_York",
-                        "America/Chicago",
-                        "America/Denver",
-                        "America/Los_Angeles",
-                        "Asia/Kolkata",
-                        "Asia/Tokyo",
-                        "Australia/Sydney",
-                      ]),
-                    ].map((zone) => (
+                    {timezones.map((zone) => (
                       <option key={zone} value={zone} />
                     ))}
                   </datalist>
-                  <p
+                  <div
                     aria-live="polite"
-                    className={`rounded-lg border p-3 text-xs leading-5 ${preview.error ? "border-destructive/30 text-destructive" : "bg-background text-muted-foreground"}`}
+                    className={`rounded-lg border bg-background p-3 ${preview.error ? "border-destructive/30" : ""}`}
                   >
-                    {preview.error ??
-                      `${status === "paused" ? "When enabled" : "Next run"}: ${new Date(preview.date!).toLocaleString(undefined, { timeZone: timezone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
-                  </p>
+                    {preview.error ? (
+                      <p className="text-xs leading-5 text-destructive">{preview.error}</p>
+                    ) : (
+                      <>
+                        <p className="mb-2 text-xs font-medium">
+                          {status === "paused" ? "Upcoming if resumed" : "Next three runs"}
+                        </p>
+                        <ol className="space-y-2">
+                          {preview.dates.map((date) => (
+                            <li
+                              key={date}
+                              className="flex justify-between gap-2 text-xs tabular-nums text-muted-foreground"
+                            >
+                              <span>
+                                {new Date(date).toLocaleDateString(undefined, {
+                                  timeZone: timezone,
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </span>
+                              <span>
+                                {new Date(date).toLocaleTimeString(undefined, {
+                                  timeZone: timezone,
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </>
+                    )}
+                  </div>
                 </fieldset>
 
                 <p className="mt-4 text-xs leading-5 text-muted-foreground">
