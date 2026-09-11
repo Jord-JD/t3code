@@ -13,7 +13,7 @@ export function unsupportedGlibcVersions(bytes: Uint8Array): string[] {
   }
   const versions = new Set(
     Array.from(
-      new TextDecoder("latin1").decode(bytes).matchAll(/GLIBC_(\d+\.\d+(?:\.\d+)?)\0/g),
+      new TextDecoder().decode(bytes).matchAll(/GLIBC_(\d+\.\d+(?:\.\d+)?)\0/g),
       (match) => match[1]!,
     ),
   );
