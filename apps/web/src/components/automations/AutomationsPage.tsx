@@ -99,7 +99,6 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
   const execute = useAtomCommand(automationAction);
   const projects = useProjects().filter((project) => project.environmentId === environmentId);
   const [editor, setEditor] = useState<Automation | "new" | null>(null);
-  const [template, setTemplate] = useState<{ name: string; prompt: string } | undefined>();
   const [tab, setTab] = useState<"tasks" | "inbox">("tasks");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -166,7 +165,6 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
           size="sm"
           disabled={!data || !projects.length}
           onClick={() => {
-            setTemplate(undefined);
             setEditor("new");
           }}
         >
@@ -339,59 +337,21 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
             </div>
           )}
           {tab === "tasks" && data.automations.length === 0 ? (
-            <>
-              <div className="flex flex-col items-center rounded-2xl border border-dashed px-6 py-12 text-center">
-                <div className="mb-5 rounded-2xl border bg-muted/40 p-4">
-                  <TimerIcon className="size-7 text-muted-foreground" />
-                </div>
-                <h2 className="text-base font-medium">No automations yet</h2>
-                <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                  Schedule a code review, a daily briefing, or a check on your project. Each run
-                  opens a thread you can pick up.
+            <div className="flex flex-col items-center rounded-2xl border border-dashed px-6 py-12 text-center">
+              <div className="mb-5 rounded-2xl border bg-muted/40 p-4">
+                <TimerIcon className="size-7 text-muted-foreground" />
+              </div>
+              <h2 className="text-base font-medium">No automations yet</h2>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                Schedule a code review, a daily briefing, or a check on your project. Each run opens
+                a thread you can pick up.
+              </p>
+              {!projects.length && (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Add a project to this environment first.
                 </p>
-                <Button
-                  className="mt-6"
-                  variant="outline"
-                  disabled={!projects.length}
-                  onClick={() => {
-                    setTemplate(undefined);
-                    setEditor("new");
-                  }}
-                >
-                  <PlusIcon />
-                  Create an automation
-                </Button>
-                {!projects.length && (
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    Add a project to this environment first.
-                  </p>
-                )}
-              </div>
-              <div>
-                <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-                  Start with an idea
-                </h2>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {TEMPLATES.map((item) => (
-                    <button
-                      key={item.name}
-                      disabled={!projects.length}
-                      onClick={() => {
-                        setTemplate(item);
-                        setEditor("new");
-                      }}
-                      className="flex flex-col items-start rounded-xl border p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                    >
-                      <item.icon className="mb-3 size-4 text-muted-foreground" />
-                      <h3 className="text-sm font-medium">{item.name}</h3>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        {item.description}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
+              )}
+            </div>
           ) : tab === "tasks" ? (
             <div className="divide-y rounded-xl border">
               {filtered.length === 0 && (
@@ -703,7 +663,6 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
         <AutomationEditor
           environmentId={environmentId}
           automation={editor === "new" ? undefined : editor}
-          template={template}
           busy={busy}
           error={error}
           onClose={() => setEditor(null)}
@@ -715,26 +674,3 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
     </>
   );
 }
-const TEMPLATES = [
-  {
-    name: "Daily project briefing",
-    description: "Catch up on changes and decide what needs attention.",
-    icon: InboxIcon,
-    prompt:
-      "Review commits from the last 24 hours. Summarize the changes, identify risks, and suggest the most useful next steps. Link to relevant files.",
-  },
-  {
-    name: "Review recent changes",
-    description: "Look for regressions before they become problems.",
-    icon: SearchIcon,
-    prompt:
-      "Review recent commits for bugs and regressions. Report only concrete, actionable findings with file references and a suggested fix. Do not modify files.",
-  },
-  {
-    name: "Keep tests healthy",
-    description: "Check the test suite and investigate new failures.",
-    icon: CheckCheckIcon,
-    prompt:
-      "Run the project's relevant tests, investigate failures, and summarize what needs attention. Follow the repository's testing instructions. Do not change files without explaining why.",
-  },
-];

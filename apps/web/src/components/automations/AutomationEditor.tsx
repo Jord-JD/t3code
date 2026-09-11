@@ -58,7 +58,6 @@ const LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function AutomationEditor({
   environmentId,
   automation,
-  template,
   busy,
   error,
   onSave,
@@ -66,7 +65,6 @@ export function AutomationEditor({
 }: {
   environmentId: EnvironmentId;
   automation: Automation | undefined;
-  template: { name: string; prompt: string } | undefined;
   busy: boolean;
   error: string | null;
   onSave: (input: AutomationInput) => Promise<void>;
@@ -83,8 +81,8 @@ export function AutomationEditor({
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
   );
   const [id] = useState(() => automation?.id ?? randomUUID());
-  const [name, setName] = useState(automation?.name ?? template?.name ?? "");
-  const [prompt, setPrompt] = useState(automation?.prompt ?? template?.prompt ?? "");
+  const [name, setName] = useState(automation?.name ?? "");
+  const [prompt, setPrompt] = useState(automation?.prompt ?? "");
   const [projectId, setProjectId] = useState(automation?.projectIds[0] ?? projects[0]?.id ?? null);
   const [selection, setSelection] = useState<ModelSelection | null>(
     () =>
