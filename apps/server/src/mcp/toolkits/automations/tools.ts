@@ -31,7 +31,7 @@ export const AutomationsToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("save_automation", {
     description:
-      "Create or update a recurring automation for this project only when the user asks to schedule work. Optionally set modelSelection (provider instance, model and options such as reasoning effort) and runtimeMode (permissions). On creation, an omitted model inherits from the current thread and omitted permissions default to full-access. Omitted settings remain unchanged on updates. Supply a stable id for updates, an IANA timezone and an RFC 5545 RRULE. Set continueThread to return to this conversation; otherwise each run creates a new thread. Skills may be referenced in the prompt.",
+      "Create or update a recurring automation for this project when requested by the user or when recurring follow-up would clearly help achieve their current goal. Check existing automations first to avoid duplicates. Choose a useful cadence and tell the user what you scheduled. Optionally set modelSelection (provider instance, model and options such as reasoning effort) and runtimeMode (permissions). On creation, an omitted model inherits from the current thread and omitted permissions default to full-access. Omitted settings remain unchanged on updates. Supply a stable id for updates, an IANA timezone and an RFC 5545 RRULE. Set continueThread to return to this conversation; otherwise each run creates a new thread. Skills may be referenced in the prompt.",
     parameters: Schema.Struct({
       id: Schema.optional(Schema.String),
       name: AutomationInput.fields.name,
@@ -58,7 +58,7 @@ export const AutomationsToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("set_automation_status", {
     description:
-      "Pause or resume a saved automation in this thread's project when requested by the user.",
+      "Pause or resume a saved automation in this thread's project when requested by the user or when doing so clearly supports their current goal. Pause work that is temporarily unnecessary; resume it when it becomes relevant again. Tell the user what changed.",
     parameters: Schema.Struct({ id: Schema.String, status: AutomationInput.fields.status }),
     success: Automation,
     failure,
@@ -68,7 +68,7 @@ export const AutomationsToolkit = Toolkit.make(
     .annotate(Tool.Idempotent, true),
   Tool.make("delete_automation", {
     description:
-      "Delete a saved automation in this thread's project when requested by the user. This removes its schedule and preserves existing run history, conversations and worktrees. Use list_automations to find its id. To temporarily stop runs, use set_automation_status instead.",
+      "Delete a saved automation in this thread's project when requested by the user or when it is clearly obsolete, redundant, or its purpose is complete. If its future usefulness is uncertain, pause it instead. Tell the user what you deleted. This removes its schedule and preserves existing run history, conversations and worktrees. Use list_automations to find its id. To temporarily stop runs, use set_automation_status instead.",
     parameters: Schema.Struct({ id: AutomationInput.fields.id }),
     success: Schema.Struct({ id: Schema.String, deleted: Schema.Literal(true) }),
     failure,
