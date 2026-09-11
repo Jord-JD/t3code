@@ -9,6 +9,7 @@ import {
   type AutomationRun,
   type AutomationSnapshot,
 } from "@t3tools/contracts";
+import { getThreadModelSelectionDisabledReason } from "@t3tools/shared/threadModelSelection";
 import { nextAutomationRun } from "@t3tools/shared/automationSchedule";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -23,6 +24,7 @@ import * as Stream from "effect/Stream";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import { makeAutomationStore } from "./AutomationStore.ts";
 
@@ -50,6 +52,7 @@ export class AutomationService extends Context.Service<
         const cryptoService = yield* Crypto.Crypto;
         const engine = yield* OrchestrationEngineService;
         const query = yield* ProjectionSnapshotQuery;
+        const providerRegistry = yield* ProviderRegistry;
         const git = yield* GitWorkflowService;
         const mutex = yield* Semaphore.make(1);
         const ready = yield* Deferred.make<void, AutomationError>();
@@ -201,6 +204,23 @@ export class AutomationService extends Context.Service<
                   const project = yield* query.getProjectShellById(id);
                   if (Option.isNone(project))
                     return yield* new AutomationError({ message: "Choose an available project." });
+                }
+                if (input.automation.threadId) {
+                  const thread = yield* query.getThreadShellById(input.automation.threadId);
+                  if (
+                    Option.isNone(thread) ||
+                    thread.value.projectId !== input.automation.projectIds[0]
+                  ) {
+                    return yield* new AutomationError({
+                      message: "The selected thread is no longer available in this project.",
+                    });
+                  }
+                  const reason = getThreadModelSelectionDisabledReason(
+                    thread.value,
+                    yield* providerRegistry.getProviders,
+                    input.automation.modelSelection,
+                  );
+                  if (reason) return yield* new AutomationError({ message: reason });
                 }
                 const automation: Automation = {
                   ...input.automation,

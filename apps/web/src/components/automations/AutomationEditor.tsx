@@ -11,11 +11,18 @@ import {
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { nextAutomationRun } from "@t3tools/shared/automationSchedule";
+import { getThreadModelSelectionDisabledReason } from "@t3tools/shared/threadModelSelection";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useEnvironment } from "../../state/environments";
-import { useProjects, useEnvironmentThreadRefs, useThreadShell } from "../../state/entities";
+import {
+  useProjects,
+  useEnvironmentThreadRefs,
+  useThreadShell,
+  readThreadShell,
+} from "../../state/entities";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -87,6 +94,15 @@ export function AutomationEditor({
     automation?.runtimeMode ?? "full-access",
   );
   const [threadId, setThreadId] = useState<ThreadId | null>(automation?.threadId ?? null);
+  const targetThread = useThreadShell(threadId ? scopeThreadRef(environmentId, threadId) : null);
+  const getModelDisabledReason = (instanceId: ModelSelection["instanceId"], model: string) =>
+    getThreadModelSelectionDisabledReason(targetThread, providers, { instanceId, model });
+  const modelError =
+    threadId && !targetThread
+      ? "The selected thread is no longer available in this project."
+      : selection
+        ? getModelDisabledReason(selection.instanceId, selection.model)
+        : null;
   const [timezone, setTimezone] = useState(
     automation?.timezone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
@@ -169,8 +185,8 @@ export function AutomationEditor({
       setValidation("Choose at least one project and a model.");
       return;
     }
-    if (preview.error) {
-      setValidation(preview.error);
+    if (modelError || preview.error) {
+      setValidation(modelError ?? preview.error);
       return;
     }
     setValidation(null);
@@ -291,13 +307,16 @@ export function AutomationEditor({
                           activeInstanceId={selection.instanceId}
                           model={selection.model}
                           lockedProvider={null}
+                          getModelDisabledReason={getModelDisabledReason}
                           instanceEntries={entries}
                           modelOptionsByInstance={modelOptions}
                           triggerVariant="ghost"
                           triggerAriaLabel="Automation model"
-                          onInstanceModelChange={(instanceId, model) =>
-                            setSelection(createModelSelection(instanceId, model))
-                          }
+                          onInstanceModelChange={(instanceId, model) => {
+                            if (!getModelDisabledReason(instanceId, model)) {
+                              setSelection(createModelSelection(instanceId, model));
+                            }
+                          }}
                         />
                         <ComposerControlSeparator />
                         <TraitsPicker
@@ -362,12 +381,23 @@ export function AutomationEditor({
                         <select
                           className={selectClass}
                           value={threadId ?? ""}
-                          onChange={(e) =>
-                            setThreadId(
-                              threadRefs.find((ref) => ref.threadId === e.target.value)?.threadId ??
-                                null,
-                            )
-                          }
+                          onChange={(e) => {
+                            const ref = threadRefs.find((ref) => ref.threadId === e.target.value);
+                            setThreadId(ref?.threadId ?? null);
+                            const thread = ref ? readThreadShell(ref) : null;
+                            if (
+                              thread &&
+                              selection &&
+                              getThreadModelSelectionDisabledReason(thread, providers, selection)
+                            ) {
+                              setSelection({
+                                ...thread.modelSelection,
+                                instanceId:
+                                  thread.session?.providerInstanceId ??
+                                  thread.modelSelection.instanceId,
+                              });
+                            }
+                          }}
                         >
                           <option value="">New thread for each run</option>
                           {threadRefs.map((ref) => (
@@ -578,9 +608,9 @@ export function AutomationEditor({
             </fieldset>
           </div>
           <footer className="shrink-0 space-y-3 border-t bg-background px-6 py-4">
-            {(validation || error) && (
+            {(validation || modelError || error) && (
               <p role="alert" className="text-sm text-destructive">
-                {validation || error}
+                {validation || modelError || error}
               </p>
             )}
             {confirmDiscard ? (
@@ -603,7 +633,12 @@ export function AutomationEditor({
                   </Button>
                   <Button
                     type="submit"
-                    disabled={busy || !selection || Boolean(preview.error) || !projectIds.length}
+                    disabled={
+                      busy ||
+                      !selection ||
+                      Boolean(preview.error || modelError) ||
+                      !projectIds.length
+                    }
                   >
                     {busy ? "Saving…" : automation ? "Save changes" : "Create automation"}
                   </Button>

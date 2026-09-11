@@ -15,6 +15,10 @@
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"
     },
+    "./threadModelSelection": {
+      "types": "./src/threadModelSelection.ts",
+      "import": "./src/threadModelSelection.ts"
+    },
     "./model": {
       "types": "./src/model.ts",
       "import": "./src/model.ts"

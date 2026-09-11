@@ -5,6 +5,10 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  ProviderDriverKind,
+  ThreadId,
+  type OrchestrationThreadShell,
+  type ServerProvider,
   type AutomationInput,
   type OrchestrationCommand,
 } from "@t3tools/contracts";
@@ -19,6 +23,7 @@ import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { AutomationService } from "./AutomationService.ts";
 import { makeAutomationStore } from "./AutomationStore.ts";
 
@@ -39,6 +44,7 @@ const input: AutomationInput = {
 };
 function dependencies(commands: OrchestrationCommand[], missingProject = false) {
   return Layer.mergeAll(
+    Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) }),
     Layer.mock(OrchestrationEngineService)({
       subscribeDomainEvents: Effect.succeed(Stream.empty),
       dispatch: (command) =>
@@ -291,3 +297,205 @@ it.effect("archives no-findings results using the completed message projection",
     }).pipe(Effect.provide(layer));
   }),
 );
+
+const timestamp = "2026-01-01T00:00:00.000Z";
+const threadId = ThreadId.make("existing-thread");
+const thread: OrchestrationThreadShell = {
+  id: threadId,
+  projectId: input.projectIds[0]!,
+  title: "Existing conversation",
+  modelSelection: input.modelSelection,
+  runtimeMode: "approval-required",
+  interactionMode: "default",
+  branch: null,
+  worktreePath: null,
+  pullRequests: [],
+  latestTurn: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
+  session: {
+    threadId,
+    status: "ready",
+    providerName: "codex",
+    providerInstanceId: input.modelSelection.instanceId,
+    runtimeMode: "approval-required",
+    activeTurnId: null,
+    lastError: null,
+    updatedAt: timestamp,
+  },
+  latestUserMessageAt: timestamp,
+  hasPendingApprovals: false,
+  hasPendingUserInput: false,
+  hasActionableProposedPlan: false,
+};
+const provider: ServerProvider = {
+  instanceId: input.modelSelection.instanceId,
+  driver: ProviderDriverKind.make("codex"),
+  continuation: { groupKey: "shared-home" },
+  enabled: true,
+  installed: true,
+  version: null,
+  status: "ready",
+  auth: { status: "authenticated" },
+  checkedAt: timestamp,
+  models: [],
+  slashCommands: [],
+  skills: [],
+};
+const otherInstance = ProviderInstanceId.make("other");
+const otherModel = { instanceId: otherInstance, model: "other-model" };
+
+for (const updating of [false, true]) {
+  for (const scenario of [
+    {
+      name: "another driver",
+      next: otherModel,
+      other: { driver: ProviderDriverKind.make("claudeAgent") },
+      error: "different provider",
+    },
+    {
+      name: "incompatible resume state",
+      next: otherModel,
+      other: { continuation: { groupKey: "other-home" } },
+      error: "incompatible provider instance",
+    },
+    {
+      name: "a provider that requires a new thread",
+      next: { ...input.modelSelection, model: "other-model" },
+      current: { requiresNewThreadForModelChange: true },
+      error: "does not allow switching models",
+    },
+    {
+      name: "a destination that requires a new thread",
+      next: otherModel,
+      other: { requiresNewThreadForModelChange: true },
+      error: "does not allow switching models",
+    },
+    { name: "compatible instances", next: otherModel },
+    {
+      name: "another model on the same provider",
+      next: { ...input.modelSelection, model: "other-model" },
+    },
+    {
+      name: "model options on a locked model",
+      next: { ...input.modelSelection, options: [{ id: "reasoningEffort", value: "high" }] },
+      current: { requiresNewThreadForModelChange: true },
+    },
+    {
+      name: "a new thread for each run",
+      next: otherModel,
+      newThread: true,
+      other: { driver: ProviderDriverKind.make("claudeAgent") },
+    },
+    {
+      name: "an unstarted thread",
+      next: otherModel,
+      unstarted: true,
+      other: { driver: ProviderDriverKind.make("claudeAgent") },
+    },
+    {
+      name: "imported history switching drivers",
+      next: otherModel,
+      imported: true,
+      other: { driver: ProviderDriverKind.make("claudeAgent") },
+      error: "different provider",
+    },
+    {
+      name: "a missing thread",
+      next: input.modelSelection,
+      missing: true,
+      error: "no longer available",
+    },
+    {
+      name: "a thread in another project",
+      next: input.modelSelection,
+      wrongProject: true,
+      error: "no longer available",
+    },
+    {
+      name: "a session instance different from the saved selection",
+      next: input.modelSelection,
+      sessionInstance: otherInstance,
+      other: { continuation: { groupKey: "other-home" } },
+      error: "incompatible provider instance",
+    },
+  ]) {
+    it.effect(`${updating ? "updates" : "creation"} validate ${scenario.name}`, () =>
+      Effect.gen(function* () {
+        const service = yield* AutomationService;
+        if (updating) yield* service.action({ type: "save", automation: input });
+        const candidate = {
+          ...input,
+          threadId: scenario.newThread ? null : threadId,
+          modelSelection: scenario.next,
+        };
+        if (scenario.error) {
+          const error = yield* service
+            .action({ type: "save", automation: candidate })
+            .pipe(Effect.flip);
+          assert.include(error.message, scenario.error);
+          assert.deepEqual(
+            (yield* service.list).automations.map((item) => item.modelSelection),
+            updating ? [input.modelSelection] : [],
+          );
+        } else {
+          const result = yield* service.action({ type: "save", automation: candidate });
+          assert.deepEqual(result.automations[0]?.modelSelection, scenario.next);
+        }
+      }).pipe(
+        Effect.provide(
+          AutomationService.layerWithOptions({ startScheduler: false }).pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                dependencies([]),
+                Layer.mock(ProviderRegistry)({
+                  getProviders: Effect.succeed([
+                    { ...provider, ...scenario.current },
+                    { ...provider, instanceId: otherInstance, ...scenario.other },
+                  ]),
+                }),
+                Layer.mock(ProjectionSnapshotQuery)({
+                  getProjectShellById: (id) =>
+                    Effect.succeedSome({
+                      id,
+                      title: "Project",
+                      workspaceRoot: "/test",
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: timestamp,
+                      updatedAt: timestamp,
+                    }),
+                  getThreadShellById: () =>
+                    Effect.succeed(
+                      scenario.missing
+                        ? Option.none()
+                        : Option.some({
+                            ...thread,
+                            projectId: scenario.wrongProject
+                              ? ProjectId.make("other-project")
+                              : thread.projectId,
+                            session:
+                              scenario.unstarted || scenario.imported
+                                ? null
+                                : {
+                                    ...thread.session!,
+                                    providerInstanceId:
+                                      scenario.sessionInstance ?? provider.instanceId,
+                                  },
+                            latestUserMessageAt: scenario.unstarted ? null : timestamp,
+                          }),
+                    ),
+                }),
+              ),
+            ),
+            Layer.provide(SqlitePersistenceMemory),
+            Layer.provide(NodeServices.layer),
+          ),
+        ),
+      ),
+    );
+  }
+}
