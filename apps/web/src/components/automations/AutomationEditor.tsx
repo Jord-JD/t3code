@@ -1,4 +1,6 @@
 import { randomUUID } from "../../lib/utils";
+import { Clock3Icon, ChevronDownIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
+import { AUTOMATION_DAYS, parseEditorSchedule } from "./automationEditorSchedule";
 import { useMemo, useState } from "react";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -31,7 +33,7 @@ import { Textarea } from "../ui/textarea";
 
 const selectClass =
   "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+const DAYS = AUTOMATION_DAYS;
 const LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function AutomationEditor({
@@ -85,10 +87,11 @@ export function AutomationEditor({
   const [timezone, setTimezone] = useState(
     automation?.timezone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
-  const [cadence, setCadence] = useState(automation ? "custom" : "weekly");
-  const [time, setTime] = useState("09:00");
-  const [interval, setIntervalValue] = useState(1);
-  const [days, setDays] = useState(["MO", "TU", "WE", "TH", "FR"]);
+  const [initialSchedule] = useState(() => parseEditorSchedule(automation?.rrule));
+  const [cadence, setCadence] = useState(initialSchedule.cadence);
+  const [time, setTime] = useState(initialSchedule.time);
+  const [interval, setIntervalValue] = useState(initialSchedule.interval);
+  const [days, setDays] = useState(initialSchedule.days);
   const [customRule, setCustomRule] = useState(
     automation?.rrule ?? "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
   );
@@ -100,13 +103,37 @@ export function AutomationEditor({
       : cadence === "hourly"
         ? `FREQ=HOURLY;INTERVAL=${interval}`
         : `FREQ=${cadence === "weekly" ? "WEEKLY" : "DAILY"};BYHOUR=${Number(time.split(":")[0])};BYMINUTE=${Number(time.split(":")[1])}${cadence === "weekly" ? `;BYDAY=${days.join(",")}` : ""}`;
+  const draft = JSON.stringify({
+    name,
+    prompt,
+    projectIds,
+    selection,
+    executionMode,
+    runtimeMode,
+    threadId,
+    timezone,
+    rule,
+    status,
+  });
+  const [initialDraft] = useState(draft);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  function requestClose() {
+    if (busy) return;
+    if (draft !== initialDraft) setConfirmDiscard(true);
+    else onClose();
+  }
   const preview = useMemo(() => {
     try {
-      return { date: nextAutomationRun(rule, timezone, new Date(), new Date()), error: null };
+      if (cadence === "weekly" && !days.length) throw new Error("Choose at least one day.");
+      const now = new Date();
+      return {
+        date: nextAutomationRun(rule, timezone, new Date(automation?.createdAt ?? now), now),
+        error: null,
+      };
     } catch (error) {
       return { date: null, error: error instanceof Error ? error.message : "Check the schedule." };
     }
-  }, [rule, timezone]);
+  }, [rule, timezone, cadence, days.length, automation]);
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
@@ -127,6 +154,7 @@ export function AutomationEditor({
       setValidation(preview.error);
       return;
     }
+    setValidation(null);
     await onSave({
       id,
       name: name.trim(),
@@ -145,274 +173,381 @@ export function AutomationEditor({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) onClose();
+        if (!open) requestClose();
       }}
     >
-      <DialogPopup className="max-h-[85dvh] max-w-2xl overflow-y-auto p-6">
-        <DialogTitle>{automation ? "Edit automation" : "New automation"}</DialogTitle>
-        <DialogDescription className="sr-only">
-          Choose instructions, projects, and a schedule.
-        </DialogDescription>
+      <DialogPopup
+        showCloseButton={false}
+        className="flex max-h-[90dvh] max-w-4xl flex-col overflow-hidden p-0"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b px-6 py-5">
+          <div className="space-y-1">
+            <DialogTitle>{automation ? "Edit automation" : "New automation"}</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Define the work once. Choose when it runs.
+            </DialogDescription>
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Close"
+            disabled={busy}
+            onClick={requestClose}
+          >
+            <XIcon />
+          </Button>
+        </header>
         <form
-          className="mt-5 space-y-5"
+          className="flex min-h-0 flex-1 flex-col"
+          onChange={() => {
+            setValidation(null);
+            setConfirmDiscard(false);
+          }}
           onSubmit={(event) => {
             event.preventDefault();
             void save();
           }}
         >
-          <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
-            <label className="block space-y-2 text-sm font-medium">
-              Name
-              <Input
-                autoFocus
-                maxLength={120}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Daily project briefing"
-                required
-              />
-            </label>
-            <label className="block space-y-2 text-sm font-medium">
-              Instructions
-              <Textarea
-                className="min-h-24 resize-y font-normal"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="What should the agent do on each run? You can reference skills with $skill-name."
-                maxLength={32000}
-                required
-              />
-            </label>
-            <fieldset className="space-y-2">
-              <legend className="mb-2 text-sm font-medium">Projects</legend>
-              <div className="max-h-32 space-y-2 overflow-y-auto rounded-lg border p-3">
-                {projects.map((project) => (
-                  <label key={project.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={projectIds.includes(project.id)}
-                      onChange={(e) => {
-                        setThreadId(null);
-                        setProjectIds(
-                          e.target.checked
-                            ? [...projectIds, project.id]
-                            : projectIds.filter((id) => id !== project.id),
-                        );
-                      }}
-                      className="accent-primary"
-                    />
-                    {project.title}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-2 text-sm font-medium">
-                Run in
-                <select
-                  className={selectClass}
-                  value={executionMode}
-                  onChange={(e) => {
-                    setExecutionMode(e.target.value === "local" ? "local" : "worktree");
-                    setThreadId(null);
-                  }}
-                >
-                  <option value="worktree">Isolated worktree</option>
-                  <option value="local">Local project</option>
-                </select>
-              </label>
-              <label className="space-y-2 text-sm font-medium">
-                Permissions
-                <select
-                  className={selectClass}
-                  value={runtimeMode}
-                  onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
-                >
-                  <option value="approval-required">Ask for approval</option>
-                  <option value="auto-accept-edits">Accept edits</option>
-                  <option value="auto">Automatic approval</option>
-                  <option value="full-access">Full access</option>
-                </select>
-              </label>
-            </div>
-            {executionMode === "local" && projectIds.length === 1 && (
-              <label className="block space-y-2 text-sm font-medium">
-                Conversation
-                <select
-                  className={selectClass}
-                  value={threadId ?? ""}
-                  onChange={(e) =>
-                    setThreadId(
-                      threadRefs.find((ref) => ref.threadId === e.target.value)?.threadId ?? null,
-                    )
-                  }
-                >
-                  <option value="">New thread for each run</option>
-                  {threadRefs.map((ref) => (
-                    <ThreadOption key={ref.threadId} threadRef={ref} projectId={projectIds[0]!} />
-                  ))}
-                </select>
-              </label>
-            )}
-            <div className="space-y-2">
-              <span className="text-sm font-medium">Model</span>
-              <div className="flex flex-wrap gap-2">
-                {selection && activeEntry ? (
-                  <>
-                    <ProviderModelPicker
-                      activeInstanceId={selection.instanceId}
-                      model={selection.model}
-                      lockedProvider={null}
-                      instanceEntries={entries}
-                      modelOptionsByInstance={modelOptions}
-                      triggerVariant="outline"
-                      triggerAriaLabel="Automation model"
-                      onInstanceModelChange={(instanceId, model) =>
-                        setSelection(createModelSelection(instanceId, model))
-                      }
-                    />
-                    <TraitsPicker
-                      provider={activeEntry.driverKind}
-                      models={activeEntry.models}
-                      model={selection.model}
-                      prompt=""
-                      onPromptChange={() => {}}
-                      modelOptions={selection.options ?? []}
-                      allowPromptInjectedEffort={false}
-                      planModeEnabled={settings.planModeEnabled}
-                      triggerVariant="outline"
-                      onModelOptionsChange={(options) =>
-                        setSelection(
-                          createModelSelection(selection.instanceId, selection.model, options),
-                        )
-                      }
-                    />
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Configure a provider in Settings to select a model.
-                  </p>
-                )}
-              </div>
-            </div>
-            <fieldset className="space-y-3 rounded-xl border p-4">
-              <legend className="px-1 text-sm font-medium">Schedule</legend>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-2 text-sm">
-                  Repeat
-                  <select
-                    className={selectClass}
-                    value={cadence}
-                    onChange={(e) => setCadence(e.target.value)}
-                  >
-                    <option value="weekly">Weekly</option>
-                    <option value="daily">Daily</option>
-                    <option value="hourly">Every few hours</option>
-                    <option value="custom">Custom RRULE</option>
-                  </select>
-                </label>
-                {cadence === "hourly" ? (
-                  <label className="space-y-2 text-sm">
-                    Hours between runs
-                    <Input
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={interval}
-                      onChange={(e) => setIntervalValue(Number(e.target.value))}
-                    />
-                  </label>
-                ) : cadence !== "custom" ? (
-                  <label className="space-y-2 text-sm">
-                    Time
-                    <Input
-                      type="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                      required
-                    />
-                  </label>
-                ) : null}
-              </div>
-              {cadence === "weekly" && (
-                <div className="flex flex-wrap gap-1" aria-label="Days of the week">
-                  {DAYS.map((day, index) => (
-                    <Button
-                      key={day}
-                      type="button"
-                      size="sm"
-                      variant={days.includes(day) ? "secondary" : "outline"}
-                      aria-pressed={days.includes(day)}
-                      onClick={() =>
-                        setDays(days.includes(day) ? days.filter((d) => d !== day) : [...days, day])
-                      }
-                    >
-                      {LABELS[index]}
-                    </Button>
-                  ))}
-                </div>
-              )}
-              {cadence === "custom" && (
-                <label className="block space-y-2 text-sm">
-                  Recurrence rule
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            <fieldset
+              disabled={busy}
+              className="grid min-w-0 disabled:opacity-60 md:grid-cols-[minmax(0,1fr)_320px]"
+            >
+              <div className="min-w-0 space-y-5 p-6">
+                <label className="block space-y-2 text-sm font-medium">
+                  Name
                   <Input
-                    value={customRule}
-                    onChange={(e) => setCustomRule(e.target.value)}
-                    className="font-mono text-xs"
-                    placeholder="FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0"
+                    autoFocus
+                    maxLength={120}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Daily project briefing"
                     required
                   />
                 </label>
-              )}
-              <label className="block space-y-2 text-sm">
-                Time zone
-                <Input
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  placeholder="Europe/London"
-                  required
-                />
-              </label>
-              <p
-                className={`text-xs ${preview.error ? "text-destructive" : "text-muted-foreground"}`}
-              >
-                {preview.error ??
-                  `Next run: ${new Date(preview.date!).toLocaleString(undefined, { timeZone: timezone })} (${timezone})`}
-              </p>
+                <label className="block space-y-2 text-sm font-medium">
+                  Instructions
+                  <Textarea
+                    className="min-h-36 resize-y font-normal"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Describe the task and what a useful result should include."
+                    maxLength={32000}
+                    required
+                  />
+                </label>
+                <p className="-mt-2 text-xs text-muted-foreground">
+                  Reference installed skills with $skill-name.
+                </p>
+                <fieldset className="space-y-2">
+                  <legend className="mb-2 text-sm font-medium">Projects</legend>
+                  <div className="max-h-28 space-y-2 overflow-y-auto rounded-lg border p-3">
+                    {projects.map((project) => (
+                      <label key={project.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={projectIds.includes(project.id)}
+                          onChange={(e) => {
+                            setThreadId(null);
+                            setProjectIds(
+                              e.target.checked
+                                ? [...projectIds, project.id]
+                                : projectIds.filter((id) => id !== project.id),
+                            );
+                          }}
+                          className="accent-primary"
+                        />
+                        {project.title}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="space-y-2">
+                  <span className="text-sm font-medium">Model</span>
+                  <div className="flex flex-wrap gap-2">
+                    {selection && activeEntry ? (
+                      <>
+                        <ProviderModelPicker
+                          activeInstanceId={selection.instanceId}
+                          model={selection.model}
+                          lockedProvider={null}
+                          instanceEntries={entries}
+                          modelOptionsByInstance={modelOptions}
+                          triggerVariant="outline"
+                          triggerAriaLabel="Automation model"
+                          onInstanceModelChange={(instanceId, model) =>
+                            setSelection(createModelSelection(instanceId, model))
+                          }
+                        />
+                        <TraitsPicker
+                          provider={activeEntry.driverKind}
+                          models={activeEntry.models}
+                          model={selection.model}
+                          prompt=""
+                          onPromptChange={() => {}}
+                          modelOptions={selection.options ?? []}
+                          allowPromptInjectedEffort={false}
+                          planModeEnabled={settings.planModeEnabled}
+                          triggerVariant="outline"
+                          onModelOptionsChange={(options) =>
+                            setSelection(
+                              createModelSelection(selection.instanceId, selection.model, options),
+                            )
+                          }
+                        />
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Configure a provider in Settings to select a model.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <details className="group rounded-lg border">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg p-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                    <SlidersHorizontalIcon className="size-4 text-muted-foreground" />
+                    Run settings
+                    <span className="ml-auto text-xs font-normal text-muted-foreground">
+                      {executionMode === "worktree" ? "Worktree" : "Local"}
+                    </span>
+                    <ChevronDownIcon className="size-4 text-muted-foreground group-open:rotate-180" />
+                  </summary>
+                  <div className="space-y-4 border-t p-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="space-y-2 text-sm font-medium">
+                        Run in
+                        <select
+                          className={selectClass}
+                          value={executionMode}
+                          onChange={(e) => {
+                            setExecutionMode(e.target.value === "local" ? "local" : "worktree");
+                            setThreadId(null);
+                          }}
+                        >
+                          <option value="worktree">Isolated worktree</option>
+                          <option value="local">Local project</option>
+                        </select>
+                      </label>
+                      <label className="space-y-2 text-sm font-medium">
+                        Permissions
+                        <select
+                          className={selectClass}
+                          value={runtimeMode}
+                          onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
+                        >
+                          <option value="approval-required">Ask for approval</option>
+                          <option value="auto-accept-edits">Accept edits</option>
+                          <option value="auto">Automatic approval</option>
+                          <option value="full-access">Full access</option>
+                        </select>
+                      </label>
+                    </div>
+                    {executionMode === "local" && projectIds.length === 1 && (
+                      <label className="block space-y-2 text-sm font-medium">
+                        Conversation
+                        <select
+                          className={selectClass}
+                          value={threadId ?? ""}
+                          onChange={(e) =>
+                            setThreadId(
+                              threadRefs.find((ref) => ref.threadId === e.target.value)?.threadId ??
+                                null,
+                            )
+                          }
+                        >
+                          <option value="">New thread for each run</option>
+                          {threadRefs.map((ref) => (
+                            <ThreadOption
+                              key={ref.threadId}
+                              threadRef={ref}
+                              projectId={projectIds[0]!}
+                            />
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {executionMode === "worktree"
+                        ? "Git projects run in a separate worktree. Non-Git projects run locally."
+                        : "Runs can change files in your checkout."}{" "}
+                      Approval requests wait in the run’s thread.
+                    </p>
+                  </div>
+                </details>
+              </div>
+              <aside className="min-w-0 border-t bg-muted/30 p-6 md:border-t-0 md:border-l">
+                <fieldset className="space-y-4">
+                  <legend className="mb-4 flex items-center gap-2 text-sm font-semibold">
+                    <Clock3Icon className="size-4 text-muted-foreground" />
+                    Schedule
+                  </legend>
+                  <div className="grid gap-3 grid-cols-2">
+                    <label className="space-y-2 text-sm">
+                      Repeat
+                      <select
+                        className={selectClass}
+                        value={cadence}
+                        onChange={(e) => setCadence(e.target.value)}
+                      >
+                        <option value="weekly">Weekly</option>
+                        <option value="daily">Daily</option>
+                        <option value="hourly">Every few hours</option>
+                        <option value="custom">Custom rule</option>
+                      </select>
+                    </label>
+                    {cadence === "hourly" ? (
+                      <label className="space-y-2 text-sm">
+                        Hours between runs
+                        <Input
+                          type="number"
+                          min={1}
+                          max={1000}
+                          value={interval}
+                          onChange={(e) => setIntervalValue(Number(e.target.value))}
+                        />
+                      </label>
+                    ) : cadence !== "custom" ? (
+                      <label className="space-y-2 text-sm">
+                        Time
+                        <Input
+                          type="time"
+                          value={time}
+                          onChange={(e) => setTime(e.target.value)}
+                          required
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                  {cadence === "weekly" && (
+                    <div className="flex gap-1" aria-label="Days of the week">
+                      {DAYS.map((day, index) => (
+                        <Button
+                          key={day}
+                          type="button"
+                          size="sm"
+                          variant={days.includes(day) ? "default" : "outline"}
+                          className="flex-1 px-1"
+                          aria-pressed={days.includes(day)}
+                          onClick={() =>
+                            setDays(
+                              days.includes(day) ? days.filter((d) => d !== day) : [...days, day],
+                            )
+                          }
+                        >
+                          {LABELS[index]}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  {cadence === "custom" && (
+                    <label className="block space-y-2 text-sm">
+                      Recurrence rule
+                      <Input
+                        value={customRule}
+                        onChange={(e) => setCustomRule(e.target.value)}
+                        className="font-mono text-xs"
+                        placeholder="FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0"
+                        required
+                      />
+                    </label>
+                  )}
+                  <label className="block space-y-2 text-sm">
+                    Time zone
+                    <Input
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      list="automation-timezones"
+                      placeholder="Europe/London"
+                      required
+                    />
+                  </label>
+                  <datalist id="automation-timezones">
+                    {[
+                      ...new Set([
+                        new Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        "UTC",
+                        "Europe/London",
+                        "Europe/Paris",
+                        "America/New_York",
+                        "America/Chicago",
+                        "America/Denver",
+                        "America/Los_Angeles",
+                        "Asia/Kolkata",
+                        "Asia/Tokyo",
+                        "Australia/Sydney",
+                      ]),
+                    ].map((zone) => (
+                      <option key={zone} value={zone} />
+                    ))}
+                  </datalist>
+                  <p
+                    aria-live="polite"
+                    className={`rounded-lg border p-3 text-xs leading-5 ${preview.error ? "border-destructive/30 text-destructive" : "bg-background text-muted-foreground"}`}
+                  >
+                    {preview.error ??
+                      `${status === "paused" ? "When enabled" : "Next run"}: ${new Date(preview.date!).toLocaleString(undefined, { timeZone: timezone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
+                  </p>
+                </fieldset>
+
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                  Keep the host computer awake and T3 running at the scheduled time.
+                </p>
+              </aside>
             </fieldset>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={status === "active"}
-                onChange={(e) => setStatus(e.target.checked ? "active" : "paused")}
-                className="accent-primary"
-              />
-              Enable schedule
-            </label>
-            <p className="text-xs leading-5 text-muted-foreground">
-              Runs use the selected provider's tools and skills. Requests that need approval wait in
-              the run's thread. Local execution can change your checkout; non-Git projects always
-              run locally.
-            </p>
-          </fieldset>
-          {(validation || error) && (
-            <p role="alert" className="text-sm text-destructive">
-              {validation || error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy || !selection}>
-              {busy ? "Saving…" : automation ? "Save changes" : "Create automation"}
-            </Button>
           </div>
+          <footer className="shrink-0 space-y-3 border-t bg-background px-6 py-4">
+            {(validation || error) && (
+              <p role="alert" className="text-sm text-destructive">
+                {validation || error}
+              </p>
+            )}
+            {confirmDiscard ? (
+              <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
+                <p className="text-sm">Discard your unsaved changes?</p>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setConfirmDiscard(false)}>
+                    Keep editing
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={onClose}>
+                    Discard changes
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={status === "active"}
+                    disabled={busy}
+                    onChange={(e) => setStatus(e.target.checked ? "active" : "paused")}
+                    className="size-4 accent-primary"
+                  />
+                  Enable schedule
+                </label>
+                <div className="ml-auto flex gap-2">
+                  <Button type="button" variant="ghost" disabled={busy} onClick={requestClose}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={busy || !selection || Boolean(preview.error) || !projectIds.length}
+                  >
+                    {busy ? "Saving…" : automation ? "Save changes" : "Create automation"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </footer>
         </form>
       </DialogPopup>
     </Dialog>
   );
 }
+
 function ThreadOption({
   threadRef,
   projectId,
