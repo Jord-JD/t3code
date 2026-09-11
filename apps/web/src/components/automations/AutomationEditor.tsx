@@ -384,6 +384,16 @@ export function AutomationEditor({
                     <Clock3Icon className="size-4 text-muted-foreground" />
                     Schedule
                   </legend>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={status === "active"}
+                      disabled={busy}
+                      onChange={(e) => setStatus(e.target.checked ? "active" : "paused")}
+                      className="size-4 accent-primary"
+                    />
+                    Enable schedule
+                  </label>
                   <div className="grid gap-3 grid-cols-2">
                     <label className="space-y-2 text-sm">
                       Repeat
@@ -518,16 +528,6 @@ export function AutomationEditor({
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={status === "active"}
-                    disabled={busy}
-                    onChange={(e) => setStatus(e.target.checked ? "active" : "paused")}
-                    className="size-4 accent-primary"
-                  />
-                  Enable schedule
-                </label>
                 <div className="ml-auto flex gap-2">
                   <Button type="button" variant="ghost" disabled={busy} onClick={requestClose}>
                     Cancel
