@@ -572,7 +572,7 @@ export function AutomationEditor({
                 </fieldset>
 
                 <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                  Keep the host computer awake and T3 running at the scheduled time.
+                  Automations only run when the host computer is awake and T3 is running.
                 </p>
               </aside>
             </fieldset>

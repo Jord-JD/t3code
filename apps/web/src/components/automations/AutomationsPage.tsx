@@ -487,8 +487,8 @@ function EnvironmentAutomations({ environmentId }: { environmentId: EnvironmentI
           )}
           <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
             <Clock3Icon className="mt-0.5 size-3.5 shrink-0" />
-            Keep the host computer awake and the T3 server running. Missed schedules run once when
-            it returns.
+            Automations only run when the host computer is awake and T3 is running. Missed schedules
+            run once when it returns.
           </p>
         </>
       )}
